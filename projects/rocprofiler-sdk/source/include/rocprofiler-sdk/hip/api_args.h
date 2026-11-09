@@ -3751,6 +3751,14 @@ typedef union rocprofiler_hip_api_args_t
         hipDevice_t         dev;
     } hipDeviceGetExecAffinitySupport;
 #endif
+#if HIP_RUNTIME_API_TABLE_STEP_VERSION >= 44
+    struct
+    {
+        hipArrayMemoryRequirements* memoryRequirements;
+        hipArray_t                  array;
+        hipDevice_t                 device;
+    } hipArrayGetMemoryRequirements;
+#endif
 } rocprofiler_hip_api_args_t;
 
 ROCPROFILER_EXTERN_C_FINI
