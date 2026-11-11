@@ -47,6 +47,8 @@ GFX1250_PANEL_ID_TO_SECTION: dict[int, str] = {
     2: "Dispatch List",
     101: "System Info",
     201: "System Speed-of-Light",
+    202: "System Speed-of-Light",
+    203: "System Speed-of-Light",
     301: "Memory chart - Instruction Cache",
     302: "Memory chart - Scalar Data Cache",
     303: "Memory chart - GL0 Cache (Vector L0)",
@@ -172,6 +174,8 @@ GFX1201_PANEL_ID_TO_SECTION: dict[int, str] = {
 # All CDNA architectures share the same panel ID mapping.
 CDNA_PANEL_ID_TO_SECTION: dict[int, str] = {
     201: "System Speed-of-Light",
+    202: "System Speed-of-Light",
+    203: "System Speed-of-Light",
     301: "Memory chart",
     401: "Roofline Performance Rates",
     402: "Roofline Plot Points",
@@ -216,6 +220,8 @@ RDNA35_PANEL_ID_TO_SECTION_BY_ARCH: dict[int, str] = {
     2: "Dispatch List",
     101: "System Info",
     201: "System Speed-of-Light",
+    202: "System Speed-of-Light",
+    203: "System Speed-of-Light",
     301: "Memory chart - Instruction Cache",
     302: "Memory chart - Scalar Data Cache",
     303: "Memory chart - TCP Cache (GL0 Vector Cache)",
