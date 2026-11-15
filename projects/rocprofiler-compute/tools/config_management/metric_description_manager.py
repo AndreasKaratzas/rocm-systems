@@ -9,9 +9,6 @@ to one description file per arch, docs/data/metrics/<arch>_metrics.yaml. Each en
 has the library text (plain), the text the docs show (rst) and the unit; an rst that
 differs from plain was edited by hand, and a sync keeps it.
 
-Run from the project root so the default --docs-output-dir (docs/data/metrics)
-resolves.
-
 Usage (paths relative to project root):
     SCRIPT=tools/config_management/metric_description_manager.py
 
@@ -34,6 +31,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT.parent / "src"))
+
+# The generated metric description files, one per arch.
+DOCS_DIR = PROJECT_ROOT.parent / "docs" / "data" / "metrics"
 
 from config_management import utils_ruamel as cm_utils
 
@@ -651,7 +651,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--docs-output-dir",
-        default="docs/data/metrics",
+        default=str(DOCS_DIR),
         help="Directory of the metric description YAMLs",
     )
 
