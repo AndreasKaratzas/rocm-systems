@@ -8,7 +8,7 @@ shows, by metric library id. Formulas, units, peaks and descriptions come from t
 library; a view row stores only how the panel shows the metric: a label other than
 the metric's name, rounding, the measured peak instead of the theoretical one, and the
 literal values of typed columns. views_to_panel_configs() turns an arch's views into
-the panel configs that load_panel_configs() reads from analysis_configs/.
+the panel configs analyze and profile read.
 
 views/<arch>/ holds the views of one metric library arch, one file per panel, and
 BUILT_IN_VIEWS the panels every arch shows from the workload's CSV files. A panel's
@@ -175,7 +175,7 @@ def views_to_panel_configs(
     metrics: Dict[str, Dict[str, Any]],
     collectables: Dict[str, str],
 ) -> "OrderedDict[int, Dict[str, Any]]":
-    """Return the panel configs of an arch's views, as load_panel_configs() does.
+    """Return the panel configs of an arch's views.
 
     Args:
         views: One arch's views by panel id (load_views()).
