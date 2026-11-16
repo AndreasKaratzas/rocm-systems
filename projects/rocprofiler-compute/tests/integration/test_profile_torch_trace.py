@@ -13,13 +13,13 @@ import common
 import pandas as pd
 import pytest
 
+from ml_api_tracing.marker_format import parse_marker_function
 from tests.integration import common as integration_common
 from tests.integration.common import (
     config,
     require_torch,
 )
 from utils import csv_compression
-from utils.utils_analysis import parse_marker_function
 
 MARKER_API_COLUMNS = {
     "Domain",
@@ -267,33 +267,37 @@ def test_torch_trace_overhead(binary_handler_profile_rocprof_compute):
     ]
     # Run WITHOUT --trace-ml-api torch (baseline)
     workload_dir_baseline = common.get_output_dir(param_id="torch_trace_baseline")
-    start_baseline = time.time()
-    returncode_baseline = binary_handler_profile_rocprof_compute(
-        profile_config,
-        workload_dir_baseline,
-        ["--iteration-multiplexing"],  # Baseline without --trace-ml-api torch
-        check_success=True,
-        roof=False,
-        app_name="torch_test_app",
-    )
-    baseline_time = time.time() - start_baseline
-    assert returncode_baseline == 0, "Baseline profiling failed"
-    common.clean_output_dir(config["cleanup"], workload_dir_baseline)
+    try:
+        start_baseline = time.time()
+        returncode_baseline = binary_handler_profile_rocprof_compute(
+            profile_config,
+            workload_dir_baseline,
+            ["--iteration-multiplexing"],  # Baseline without --trace-ml-api torch
+            check_success=True,
+            roof=False,
+            app_name="torch_test_app",
+        )
+        baseline_time = time.time() - start_baseline
+        assert returncode_baseline == 0, "Baseline profiling failed"
+    finally:
+        common.clean_output_dir(config["cleanup"], workload_dir_baseline)
 
     # Run WITH --trace-ml-api torch (requires --experimental)
     workload_dir_with_flag = common.get_output_dir(param_id="torch_trace_with_flag")
-    start_with_flag = time.time()
-    returncode_with_flag = binary_handler_profile_rocprof_compute(
-        profile_config,
-        workload_dir_with_flag,
-        ["--experimental", "--trace-ml-api", "torch", "--iteration-multiplexing"],
-        check_success=True,
-        roof=False,
-        app_name="torch_test_app",
-    )
-    with_flag_time = time.time() - start_with_flag
-    assert returncode_with_flag == 0, "Profiling with torch-trace failed"
-    common.clean_output_dir(config["cleanup"], workload_dir_with_flag)
+    try:
+        start_with_flag = time.time()
+        returncode_with_flag = binary_handler_profile_rocprof_compute(
+            profile_config,
+            workload_dir_with_flag,
+            ["--experimental", "--trace-ml-api", "torch", "--iteration-multiplexing"],
+            check_success=True,
+            roof=False,
+            app_name="torch_test_app",
+        )
+        with_flag_time = time.time() - start_with_flag
+        assert returncode_with_flag == 0, "Profiling with torch-trace failed"
+    finally:
+        common.clean_output_dir(config["cleanup"], workload_dir_with_flag)
 
     wall_clock_overhead = percent_overhead(with_flag_time, baseline_time, "wall-clock")
     print_torch_trace_overhead_report(
@@ -356,26 +360,27 @@ def test_profile_invalid_workloads_torch_trace(
         param_id=f"invalid_wl_{request.node.callspec.id}"
     )
 
-    returncode, stdout, stderr = binary_handler_profile_rocprof_compute(
-        test_config,
-        workload_dir,
-        options=[
-            "--experimental",
-            "--trace-ml-api",
-            "torch",
-            "--iteration-multiplexing",
-        ],
-        check_success=False,
-        app_name=app_name,
-        capture_output=True,
-    )
+    try:
+        returncode, stdout, stderr = binary_handler_profile_rocprof_compute(
+            test_config,
+            workload_dir,
+            options=[
+                "--experimental",
+                "--trace-ml-api",
+                "torch",
+                "--iteration-multiplexing",
+            ],
+            check_success=False,
+            app_name=app_name,
+            capture_output=True,
+        )
 
-    assert returncode == expected_exit, (
-        f"Expected exit code {expected_exit} for {workload_cmd}, "
-        f"got {returncode}.\nstdout: {stdout}\nstderr: {stderr}"
-    )
-
-    common.clean_output_dir(config["cleanup"], workload_dir)
+        assert returncode == expected_exit, (
+            f"Expected exit code {expected_exit} for {workload_cmd}, "
+            f"got {returncode}.\nstdout: {stdout}\nstderr: {stderr}"
+        )
+    finally:
+        common.clean_output_dir(config["cleanup"], workload_dir)
 
 
 @pytest.mark.parametrize(
@@ -432,21 +437,22 @@ def test_profile_invalid_workloads_no_torch_trace(
         param_id=f"invalid_wl_{request.node.callspec.id}"
     )
 
-    returncode, stdout, stderr = binary_handler_profile_rocprof_compute(
-        test_config,
-        workload_dir,
-        options=[],
-        check_success=False,
-        app_name=app_name,
-        capture_output=True,
-    )
+    try:
+        returncode, stdout, stderr = binary_handler_profile_rocprof_compute(
+            test_config,
+            workload_dir,
+            options=[],
+            check_success=False,
+            app_name=app_name,
+            capture_output=True,
+        )
 
-    assert returncode == expected_exit, (
-        f"Expected exit code {expected_exit} for {workload_cmd}, "
-        f"got {returncode}.\nstdout: {stdout}\nstderr: {stderr}"
-    )
-
-    common.clean_output_dir(config["cleanup"], workload_dir)
+        assert returncode == expected_exit, (
+            f"Expected exit code {expected_exit} for {workload_cmd}, "
+            f"got {returncode}.\nstdout: {stdout}\nstderr: {stderr}"
+        )
+    finally:
+        common.clean_output_dir(config["cleanup"], workload_dir)
 
 
 def test_list_torch_operators_prints_call_tree(

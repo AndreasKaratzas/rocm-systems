@@ -11,9 +11,9 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
+from ml_api_tracing.selectors import resolve_profile_selection
 from pc_sampling.pc_sampling_profile import PCSamplingProfile
 from rocprof_compute_soc.soc_base import OmniSoC_Base
-from utils.inject_roctx.constants import KNOWN_ML_API_BACKENDS
 from utils.logger import (
     console_debug,
     console_error,
@@ -97,9 +97,9 @@ def _find_python_script_index(argv: List[str]) -> Tuple[Optional[int], Optional[
 
 def _frameworks_to_trace(trace_ml_api: Optional[List[str]]) -> Optional[List[str]]:
     """Return the --trace-ml-api frameworks. With no values, it traces all of them."""
-    if trace_ml_api == []:
-        return list(KNOWN_ML_API_BACKENDS)
-    return trace_ml_api
+    if trace_ml_api is None:
+        return None
+    return resolve_profile_selection(trace_ml_api)
 
 
 def _prepare_ml_api_trace_injection(
