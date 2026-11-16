@@ -9,6 +9,8 @@ from typing import Dict, List, Tuple
 import pandas as pd
 
 from membw_analysis.engine import run_membw_analysis
+from ml_api_tracing.analysis import process_ml_api_trace_output
+from ml_api_tracing.call_tree import iter_call_tree_paths, rollup_node_stats
 from ml_api_tracing.models import CallTreeForest, CallTreeNode
 from ml_api_tracing.selectors import (
     bind_operator_patterns,
@@ -27,9 +29,6 @@ from utils.utils_analysis import (
     copy_matched_operator_subtree,
     filter_forest_by_backends,
     impute_counters_iteration_multiplex,
-    iter_call_tree_paths,
-    process_ml_api_trace_output,
-    rollup_node_stats,
 )
 from utils.utils_common import selects_roofline, validate_roofline_csv
 

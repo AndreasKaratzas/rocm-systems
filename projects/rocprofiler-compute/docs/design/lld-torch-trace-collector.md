@@ -14,6 +14,10 @@ and leaves call-tree construction to analysis.
 | [marker_format.py](../../src/ml_api_tracing/marker_format.py) | Shared Python marker encoding, composition, parsing, and legacy stacked-wire detection |
 | [constants.py](../../src/ml_api_tracing/constants.py) | Framework and user-region identities shared by profiling, selectors, and marker parsing |
 | [selectors.py](../../src/ml_api_tracing/selectors.py) | Stdlib-only selector parsing, ordered framework resolution, workload binding, and plain labels |
+| [analysis.py](../../src/ml_api_tracing/analysis.py) | Analysis entry point, diagnostics, and staged workload publication |
+| [input.py](../../src/ml_api_tracing/input.py) | Marker/counter pair discovery and CSV loading |
+| [processing.py](../../src/ml_api_tracing/processing.py) | Joining passes, parsing markers, and reconstructing trace data |
+| [call_tree.py](../../src/ml_api_tracing/call_tree.py) | Nesting, launcher attachment, traversal, and statistical rollup |
 | [torch_trace_collector.cpp](../../src/lib/torch_trace_collector/torch_trace_collector.cpp) | Process-wide callback installation, range lifetime, and launcher debug info |
 | [argument_capture.cpp](../../src/lib/torch_trace_collector/argument_capture.cpp) | Bounded input rendering and schema-name lookup |
 | [wire_format.h](../../src/lib/torch_trace_collector/wire_format.h) | Native marker serialization |
@@ -152,7 +156,7 @@ analyze exit during parse.
 
 ## Analyze path
 
-`--list-*-operators` / `--*-operator`:
+`--list-operators` / `--operator`:
 
 1. Pair each `ml_api_trace_*_marker_api_trace.csv` with its sibling
    `_counter_collection.csv`.
