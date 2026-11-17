@@ -354,8 +354,8 @@ TEST(GpuUnit, DpmMixedDevicesPreservePublicApiErrors) {
                    std::string(reinterpret_cast<const char*>(&metrics), sizeof(metrics)));
     tree.WriteFile(device_path + "pp_od_clk_voltage", kOdNoFclk);
   }
-  ScopedOverride<std::string> root_guard(
-      smi_amdgpu_sysfs_drm_root, smi_amdgpu_set_sysfs_drm_root_for_testing, tree.root() + "/");
+  ScopedOverride<std::string> root_guard(amd::smi::test_hooks::SysfsDrmRoot,
+                                         amd::smi::test_hooks::SetSysfsDrmRoot, tree.root());
   ScopedRocmSmiDevice rocm_dgpu(tree.root() + "/card0");
   ScopedRocmSmiDevice rocm_igpu(tree.root() + "/card1");
   AMDSmiDrm drm;
