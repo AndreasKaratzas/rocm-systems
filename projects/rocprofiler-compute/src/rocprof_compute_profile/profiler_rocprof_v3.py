@@ -33,7 +33,7 @@ class rocprof_v3_profiler(RocProfCompute_Base):
 
     def get_profiler_options(self) -> List[str]:
         args = self.get_args()
-        if args.trace_ml_api is not None:
+        if self._ml_api_trace_enabled:
             trace_option = "--marker-trace"
         else:
             trace_option = "--kernel-trace"

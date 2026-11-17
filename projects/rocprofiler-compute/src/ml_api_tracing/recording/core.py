@@ -1,51 +1,46 @@
 # Copyright (c) Advanced Micro Devices, Inc.
 # SPDX-License-Identifier:  MIT
 
-"""ROCTX range push and pop for inject_roctx backends."""
+"""ROCTX range push and pop for ML API tracing backends."""
 
 import importlib.util
 import inspect
 import os
 import sys
 import threading
-from collections.abc import Iterable
 from importlib.machinery import PathFinder
 from pathlib import Path
-from typing import Callable
+from typing import Callable, List, Tuple
 
 from ml_api_tracing.marker_format import compose_marker
-
-
-def _missing_range_push(_label: str) -> None:
-    raise RuntimeError(
-        "inject_roctx.core: Python tier rangePush is not configured.",
-    )
-
-
-def _missing_range_pop() -> None:
-    raise RuntimeError(
-        "inject_roctx.core: Python tier rangePop is not configured.",
-    )
-
-
-class _CoreState:
-    """Mutable core state: the Python-tier rangePush/rangePop callbacks, the
-    registered framework roots, and the ROCm directories probed for the roctx
-    module.
-    """
-
-    def __init__(self) -> None:
-        self.range_push: Callable[[str], None] = _missing_range_push
-        self.range_pop: Callable[[], None] = _missing_range_pop
-        self.framework_roots: list[str] = []
-        self.roctx_candidate_paths: list[str] = []
-
-
-_STATE = _CoreState()
 
 # Frames under the package directory are skipped during caller-location
 # resolution.
 _PACKAGE_ROOT: str = str(Path(__file__).resolve().parent) + os.sep
+
+_thread_local = threading.local()
+
+
+def push_scope(
+    marker: str,
+    context: str,
+    backend: str = "",
+    args: str = "n/a",
+) -> None:
+    """Emit a marker and count this thread's scope only after its push succeeds."""
+    _STATE.range_push(compose_marker(marker, context, backend, args=args))
+    _thread_local.depth = getattr(_thread_local, "depth", 0) + 1
+
+
+def pop_scope() -> None:
+    """Pop a recorded scope and decrement depth even if the callback raises."""
+    depth = getattr(_thread_local, "depth", 0)
+    if depth <= 0:
+        return
+    try:
+        _STATE.range_pop()
+    finally:
+        _thread_local.depth = depth - 1
 
 
 def set_python_tier_io(
@@ -61,12 +56,12 @@ def python_tier_configured() -> bool:
     return _STATE.range_push is not _missing_range_push
 
 
-def get_python_tier_io() -> tuple[Callable[[str], None], Callable[[], None]]:
+def get_python_tier_io() -> Tuple[Callable[[str], None], Callable[[], None]]:
     """Return the currently wired (rangePush, rangePop) callbacks."""
     return _STATE.range_push, _STATE.range_pop
 
 
-def roctx_candidate_paths() -> list[str]:
+def roctx_candidate_paths() -> List[str]:
     """Return the directories probed for the roctx module."""
     return list(_STATE.roctx_candidate_paths)
 
@@ -107,9 +102,6 @@ def add_framework_root(path: str) -> None:
         _STATE.framework_roots.append(root)
 
 
-_thread_local = threading.local()
-
-
 def resolve_user_caller_location() -> str:
     """'file:line' for the nearest user frame, or 'n/a'."""
     frame = inspect.currentframe()
@@ -123,35 +115,29 @@ def resolve_user_caller_location() -> str:
     return "n/a"
 
 
-def _push_scope(
-    marker: str,
-    context: str,
-    backend: str = "",
-    args: str = "n/a",
-) -> None:
-    _STATE.range_push(compose_marker(marker, context, backend, args=args))
-    _thread_local.depth = getattr(_thread_local, "depth", 0) + 1
+def _missing_range_push(_label: str) -> None:
+    raise RuntimeError(
+        "inject_roctx.core: Python tier rangePush is not configured.",
+    )
 
 
-def _pop_scope() -> None:
-    depth = getattr(_thread_local, "depth", 0)
-    if depth <= 0:
-        return
-    try:
-        _STATE.range_pop()
-    finally:
-        _thread_local.depth = depth - 1
+def _missing_range_pop() -> None:
+    raise RuntimeError(
+        "inject_roctx.core: Python tier rangePop is not configured.",
+    )
 
 
-def install_global_wraps(backends: Iterable[str] = ()) -> None:
-    """Install ROCTX instrumentation for each named backend.
-
-    ``backends`` is an iterable of framework names (e.g. ``["torch"]``).
-    Empty input is a no-op.
+class _CoreState:
+    """Mutable core state: the Python-tier rangePush/rangePop callbacks, the
+    registered framework roots, and the ROCm directories probed for the roctx
+    module.
     """
-    from .registry import install_many
 
-    names = [str(n).strip() for n in backends if str(n).strip()]
-    if not names:
-        return
-    install_many(names)
+    def __init__(self) -> None:
+        self.range_push: Callable[[str], None] = _missing_range_push
+        self.range_pop: Callable[[], None] = _missing_range_pop
+        self.framework_roots: List[str] = []
+        self.roctx_candidate_paths: List[str] = []
+
+
+_STATE = _CoreState()

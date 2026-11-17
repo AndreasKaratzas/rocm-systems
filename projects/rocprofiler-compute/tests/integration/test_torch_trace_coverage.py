@@ -22,12 +22,6 @@ import pytest
 
 from tests.integration.common import require_torch
 
-# Allow collection on CPU-only hosts.
-try:
-    import torch  # noqa: E402
-except Exception:
-    torch = None
-
 try:
     import torch_trace_coverage_utils as coverage_utils
 except ImportError:
@@ -35,7 +29,11 @@ except ImportError:
 
 COVERAGE_TEST_CONFIG: Dict[str, Any] = {"cleanup": True}
 
-os.environ["ROCPROF"] = "rocprofiler-sdk"
+
+@pytest.fixture(autouse=True)
+def use_rocprofiler_sdk(monkeypatch):
+    """Select the rocprofiler-sdk profiler for these tests and restore it after."""
+    monkeypatch.setenv("ROCPROF", "rocprofiler-sdk")
 
 
 @pytest.fixture
@@ -47,6 +45,7 @@ def torch_trace_coverage_sampling(request):
     return seed, n
 
 
+@pytest.mark.torch_trace_coverage
 def test_random_operator_kernel_coverage(
     request,
     tmp_path,
