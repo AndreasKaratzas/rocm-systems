@@ -8,11 +8,12 @@ import sys
 from abc import abstractmethod
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Optional, Set, TextIO
+from typing import Any, Dict, List, Optional, Set, TextIO
 
 import pandas as pd
 
 import config
+from ml_api_tracing.analysis import validate_operator_trace_options
 from rocprof_compute_soc.soc_base import OmniSoC_Base
 from utils import file_io, parser, schema
 from utils.logger import (
@@ -69,6 +70,7 @@ class OmniAnalyze_Base:
         self.__supported_archs = supported_archs
         self._output: Optional[TextIO] = None
         self.__socs: Optional[dict[str, OmniSoC_Base]] = None
+        self._operator_patterns_by_path: Dict[str, Dict[str, List[str]]] = {}
 
     def get_args(self) -> argparse.Namespace:
         return self.__args
@@ -267,6 +269,7 @@ class OmniAnalyze_Base:
     def sanitize(self) -> None:
         """Perform sanitization of inputs"""
         args = self.get_args()
+        self._operator_patterns_by_path = {}
 
         if not args.path:
             console_error("The following arguments are required: -p/--path")
@@ -352,6 +355,30 @@ class OmniAnalyze_Base:
                     "Metrics are calculated based on partially available counter data."
                 ),
             )
+
+    def bind_operator_selectors(
+        self, workload_path: str
+    ) -> Optional[Dict[str, List[str]]]:
+        """Authorize tracing options and retain this workload's operator binding."""
+        args = self.get_args()
+        list_operators = getattr(args, "list_operators", None)
+        operator_patterns = getattr(args, "operator", None)
+        if list_operators is None and operator_patterns is None:
+            return None
+        if list_operators is None and workload_path in self._operator_patterns_by_path:
+            return self._operator_patterns_by_path[workload_path]
+
+        path_config = (
+            self.get_profiling_config()
+            if workload_path == args.path[0][0]
+            else file_io.load_profiling_config(workload_path)
+        )
+        bound_patterns = validate_operator_trace_options(
+            workload_path, list_operators, operator_patterns, path_config
+        )
+        if bound_patterns is not None:
+            self._operator_patterns_by_path[workload_path] = bound_patterns
+        return bound_patterns
 
     # ----------------------------------------------------
     # Required methods to be implemented by child classes

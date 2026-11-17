@@ -13,7 +13,7 @@
       "unexpected_behavior": [
         "guesses an operator pattern without listing the captured operators first"
       ],
-      "logs_contain": ["--trace-ml-api torch", "--list-operators torch"]
+      "logs_contain": ["--experimental", "--trace-ml-api torch", "--list-operators torch"]
     },
     {
       "id": "tt-map-kernels-to-model-code",
@@ -24,7 +24,7 @@
         "profiles the Python script with --experimental --trace-ml-api torch",
         "advises profiling a few steady-state iterations rather than a full run"
       ],
-      "logs_contain": ["--trace-ml-api torch"]
+      "logs_contain": ["--experimental", "--trace-ml-api torch"]
     },
     {
       "id": "tt-list-user-operators",
@@ -36,7 +36,7 @@
         "lists the user region with --experimental --list-operators user",
         "shows the operator call tree under that region, including nested ML API operators and the GPU kernels they launched"
       ],
-      "logs_contain": ["--trace-ml-api", "--list-operators user"]
+      "logs_contain": ["--experimental", "--trace-ml-api", "--list-operators user"]
     }
   ]
 }

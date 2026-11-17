@@ -18,6 +18,9 @@ and leaves call-tree construction to analysis.
 | [input.py](../../src/ml_api_tracing/input.py) | Marker/counter pair discovery and CSV loading |
 | [processing.py](../../src/ml_api_tracing/processing.py) | Joining passes, parsing markers, and reconstructing trace data |
 | [call_tree.py](../../src/ml_api_tracing/call_tree.py) | Nesting, launcher attachment, traversal, and statistical rollup |
+| [selection.py](../../src/ml_api_tracing/selection.py) | Mixed-forest matching, scoped subtree selection, and dispatch-key mapping |
+| [summary.py](../../src/ml_api_tracing/summary.py) | Owned call-tree aggregation for reports |
+| [display.py](../../src/ml_api_tracing/display.py) | Operator listing and matched reports using owned display views |
 | [torch_trace_collector.cpp](../../src/lib/torch_trace_collector/torch_trace_collector.cpp) | Process-wide callback installation, range lifetime, and launcher debug info |
 | [argument_capture.cpp](../../src/lib/torch_trace_collector/argument_capture.cpp) | Bounded input rendering and schema-name lookup |
 | [wire_format.h](../../src/lib/torch_trace_collector/wire_format.h) | Native marker serialization |
@@ -179,6 +182,17 @@ disagreement across passes. Coverage issues warn during join and attach, and
 the forest continues: unmatched dispatches, attach failures, and unlocated
 roots in `KNOWN_ML_API_BACKENDS` with no launcher thread. Plain analyze
 without those flags does not join and does not report those conditions.
+
+Analyze binds normalized selectors separately for each workload using its saved
+`trace_ml_api` configuration. Orchestration owns configuration loading and the
+per-path binding cache; feature selection and reports consume the same bound
+map. Listing takes precedence over filtering. A bare `--list-operators` lists
+the complete forest. Named framework matches retain scoped descendants and
+ancestor scaffolding, while user-region matches retain every descendant.
+Selection returns ordered unique PMC keys without changing statistical payload
+multiplicity. Listing numbering and report rollup operate on owned display
+copies. Metric selection assigns sliced kernel IDs to the staged Workload at
+the existing analysis step.
 
 ## Plain-C interface
 

@@ -10,7 +10,7 @@
       "unexpected_behavior": [
         "relies on --trace-ml-api triton alone to capture torch.compile kernels"
       ],
-      "logs_contain": ["--trace-ml-api torch"]
+      "logs_contain": ["--experimental", "--trace-ml-api torch"]
     },
     {
       "id": "tt-filter-by-operator",
@@ -23,7 +23,50 @@
       "unexpected_behavior": [
         "passes --list-operators and --operator on the same command"
       ],
-      "logs_contain": ["--operator"]
+      "logs_contain": ["--experimental", "--operator"]
+    },
+    {
+      "id": "tt-mixed-selector-prefixes",
+      "skill_should_trigger": true,
+      "prompt": "For ROCm 10.3.0, show me commands to trace both PyTorch and Triton, then list Torch operators and my user ROCTx regions. Explain this filter: --operator 'torch:*conv*' '*relu*' 'triton:*matmul*' 'user:*Step*' '*Batch*'. Do not run any commands.",
+      "expected_behavior": [
+        "uses --experimental --trace-ml-api torch triton and --experimental --list-operators torch user with separate space-delimited values",
+        "explains that *relu* keeps the torch prefix and *Batch* keeps the user prefix",
+        "explains that a matched user region keeps all operators and kernels inside it"
+      ],
+      "unexpected_behavior": [
+        "uses comma-separated framework values or --trace-ml-api user",
+        "treats an unprefixed pattern after a prefix as matching every framework",
+        "uses a framework pattern to remove work inside a selected user region"
+      ]
+    },
+    {
+      "id": "tt-operator-literal-comma",
+      "skill_should_trigger": true,
+      "prompt": "On ROCm 10.3.0, does --operator 'torch:*relu*,*addmm*' select both relu and addmm? Show how to select the two separately. Do not run any commands.",
+      "expected_behavior": [
+        "says that the comma stays in one glob pattern and does not separate operators",
+        "uses --experimental --operator with separate quoted patterns for relu and addmm, both scoped to torch"
+      ],
+      "unexpected_behavior": [
+        "claims the comma splits the pattern into two filters",
+        "changes the globs to regular expressions"
+      ]
+    },
+    {
+      "id": "tt-previous-rocm-options",
+      "skill_should_trigger": true,
+      "prompt": "I use ROCm 10.2.0 on one machine and ROCm 10.1.0 on another. How do I trace PyTorch and Triton and filter the operators? Can I select my own ROCTx region as well? Do not run any commands.",
+      "expected_behavior": [
+        "uses --experimental with --torch-trace and --triton-trace, or --ml-api-trace, on both older releases",
+        "uses --list-torch-operators / --list-triton-operators and --torch-operator / --triton-operator with unprefixed glob patterns",
+        "says that the user-region selector was introduced in ROCm 10.3.0",
+        "distinguishes the first-use Torch helper build in ROCm 10.1.0 from the prebuilt collector in ROCm 10.2.0"
+      ],
+      "unexpected_behavior": [
+        "uses the ROCm 10.3.0 selector option names or backend prefixes on either older release",
+        "claims that both older releases ship the prebuilt collector"
+      ]
     },
     {
       "id": "tt-user-roctx-no-collection-control",
@@ -57,6 +100,7 @@
     {
       "id": "tt-model-accuracy",
       "skill_should_trigger": false,
+      "note": "PyTorch question with no performance profiling in it.",
       "prompt": "why is my PyTorch model's validation accuracy dropping?"
     }
   ]

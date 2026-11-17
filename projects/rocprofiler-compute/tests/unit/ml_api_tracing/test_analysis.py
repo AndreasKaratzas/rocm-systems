@@ -3,16 +3,90 @@
 
 """Workload state and diagnostics for ML API trace analysis."""
 
+import argparse
+import functools
+from copy import deepcopy
+
 import pandas as pd
 import pytest
 
-from ml_api_tracing import analysis, processing
+from ml_api_tracing import analysis, call_tree, processing
 from ml_api_tracing.analysis import process_ml_api_trace_output
 from ml_api_tracing.analysis_models import MlApiTracePair
 from ml_api_tracing.errors import LauncherThreadNotFoundError, MarkerNotNestedError
 from ml_api_tracing.marker_format import parse_marker_function
-from ml_api_tracing.models import CallTreeNode
-from utils import csv_compression, schema
+from ml_api_tracing.models import CallTreeNode, KernelStats
+from utils import csv_compression, file_io, schema
+
+FIRST_PMC_GROUP_KEY = ("guid", 1, 256, 64, 0)
+SECOND_PMC_GROUP_KEY = ("guid", 2, 256, 64, 0)
+
+
+def build_operator_workload():
+    first = CallTreeNode(
+        name="aten::first",
+        backend="torch",
+        kernels={
+            "first_kernel": KernelStats(
+                launches=2,
+                total_duration_ns=6000.0,
+                min_duration_ns=1000.0,
+                max_duration_ns=5000.0,
+                kernel_id=90,
+                pmc_group_keys=[FIRST_PMC_GROUP_KEY, FIRST_PMC_GROUP_KEY],
+            )
+        },
+        invocation_ids={"10", "20"},
+        args_invocations={"(value=float32[2x2])": {"10", "20"}},
+        file_name="model.py",
+        line_number=19,
+        thread_id="1",
+        launcher_thread_id="2",
+        start_timestamp=10.0,
+        end_timestamp=60.0,
+    )
+    second = CallTreeNode(
+        name="aten::second",
+        backend="torch",
+        kernels={
+            "second_kernel": KernelStats(
+                launches=1,
+                total_duration_ns=2000.0,
+                min_duration_ns=2000.0,
+                max_duration_ns=2000.0,
+                kernel_id=91,
+                pmc_group_keys=[SECOND_PMC_GROUP_KEY],
+            )
+        },
+    )
+    cpu = CallTreeNode(
+        name="aten::cpu",
+        backend="torch",
+        invocation_ids={"30"},
+        args_invocations={"(value=3)": {"30"}},
+        file_name="model.py",
+        line_number=23,
+        thread_id="1",
+    )
+    root = CallTreeNode(
+        name="model.forward", backend="torch", children=[first, second, cpu]
+    )
+    call_tree.rollup_node_stats(root)
+    return schema.Workload(
+        ml_api_call_trees={"1": [root]},
+        ml_api_trace_df=pd.DataFrame({"Function": ["retained"]}),
+        raw_pmc=pd.DataFrame({
+            "Dispatch_ID": [8, 3],
+            "Kernel_Name": ["first_kernel", "second_kernel"],
+        }),
+        filter_dispatch_ids=["8"],
+        filter_kernel_ids=[],
+    )
+
+
+def record_generic_kernel_error(errors, *argv, **_kwargs):
+    errors.append(str(argv[-1]))
+    raise SystemExit(1)
 
 
 def build_record_console_error_and_exit(monkeypatch):
@@ -923,3 +997,406 @@ def test_process_pass_marker_count_mismatch_exits(
         process_ml_api_trace_output(workload, str(workload_dir))
     assert excinfo.value.code == 1
     assert "per-pass marker counts" in messages[0]
+
+
+def test_apply_operator_filter_without_flag_preserves_workload():
+    workload = build_operator_workload()
+    previous_forest = workload.ml_api_call_trees
+    previous_dispatches = workload.filter_dispatch_ids
+    previous_trace = workload.ml_api_trace_df
+
+    assert analysis.apply_operator_filter(workload, None, "/workload") == []
+    assert workload.ml_api_call_trees is previous_forest
+    assert workload.filter_dispatch_ids is previous_dispatches
+    assert workload.ml_api_trace_df is previous_trace
+
+
+@pytest.mark.parametrize(
+    ("options", "expected_message"),
+    [
+        pytest.param(
+            {"torch": ["nomatch"]},
+            "No PyTorch operators matched the pattern(s): nomatch",
+            id="torch",
+        ),
+        pytest.param(
+            {"torch": ["nofirst"], "triton": ["nosecond"]},
+            "No PyTorch, Triton operators matched the pattern(s): nofirst, nosecond",
+            id="combined-backend-label-and-normalized-patterns",
+        ),
+    ],
+)
+def test_apply_operator_filter_missed_glob_preserves_previous_stages(
+    monkeypatch, record_console_error_and_exit, options, expected_message
+):
+    workload = build_operator_workload()
+    previous_forest = workload.ml_api_call_trees
+    expected_forest = deepcopy(previous_forest)
+    previous_dispatches = workload.filter_dispatch_ids
+    previous_raw = workload.raw_pmc
+    previous_trace = workload.ml_api_trace_df
+    messages = record_console_error_and_exit(monkeypatch)
+
+    with pytest.raises(SystemExit) as failure:
+        analysis.apply_operator_filter(workload, options, "/workload")
+
+    assert failure.value.code == 1
+    assert messages == [f"/workload: {expected_message}"]
+    assert workload.ml_api_call_trees is previous_forest
+    assert workload.ml_api_call_trees == expected_forest
+    assert workload.filter_dispatch_ids is previous_dispatches
+    assert workload.raw_pmc is previous_raw
+    assert workload.ml_api_trace_df is previous_trace
+
+
+def test_apply_operator_filter_cpu_only_publishes_copy_before_no_dispatch_fatal(
+    monkeypatch, record_console_error_and_exit
+):
+    workload = build_operator_workload()
+    previous_forest = workload.ml_api_call_trees
+    expected_forest = deepcopy(previous_forest)
+    previous_dispatches = workload.filter_dispatch_ids
+    previous_raw = workload.raw_pmc
+    previous_cpu = previous_forest["1"][0].children[2]
+    messages = record_console_error_and_exit(monkeypatch)
+
+    with pytest.raises(SystemExit) as failure:
+        analysis.apply_operator_filter(workload, {"torch": ["aten::cpu"]}, "/workload")
+
+    assert failure.value.code == 1
+    assert messages == [
+        "/workload: No PyTorch kernel dispatches on the matched operators"
+    ]
+    assert workload.ml_api_call_trees is not previous_forest
+    root = workload.ml_api_call_trees["1"][0]
+    assert [child.name for child in root.children] == ["aten::cpu"]
+    assert root.children[0] == previous_cpu
+    assert root.children[0] is not previous_cpu
+    assert root.kernel_launches == 0
+    assert root.total_duration_ms == 0
+    assert previous_forest == expected_forest
+    assert workload.filter_dispatch_ids is previous_dispatches
+    assert workload.raw_pmc is previous_raw
+
+
+@pytest.mark.parametrize(
+    ("keys", "user_filter", "expected_message"),
+    [
+        pytest.param(
+            [FIRST_PMC_GROUP_KEY, ("first-missing",), ("later-missing",)],
+            ["not-an-integer"],
+            "No PyTorch analyze dispatch id for pmc group key ('first-missing',)",
+            id="first-missing-pmc-key-precedes-user-filter-parsing",
+        ),
+        pytest.param(
+            [FIRST_PMC_GROUP_KEY, SECOND_PMC_GROUP_KEY],
+            ["9"],
+            "No PyTorch dispatches matched the -d filter: ['9']",
+            id="empty-explicit-d-intersection",
+        ),
+        pytest.param(
+            [FIRST_PMC_GROUP_KEY, SECOND_PMC_GROUP_KEY],
+            [" > 8 "],
+            "No PyTorch dispatches matched the -d filter: [' > 8 ']",
+            id="empty-exclusive-threshold-intersection",
+        ),
+        pytest.param(
+            [],
+            None,
+            "No PyTorch dispatches matched the -d filter: None",
+            id="empty-mapped-dispatches",
+        ),
+    ],
+)
+def test_select_operator_dispatches_fatal_preserves_all_previous_state(
+    monkeypatch, record_console_error_and_exit, keys, user_filter, expected_message
+):
+    workload = build_operator_workload()
+    workload.filter_dispatch_ids = user_filter
+    previous_forest = workload.ml_api_call_trees
+    expected_forest = deepcopy(previous_forest)
+    previous_raw = workload.raw_pmc
+    messages = record_console_error_and_exit(monkeypatch)
+    logged = []
+    monkeypatch.setattr(analysis, "console_log", lambda *argv: logged.append(argv))
+
+    with pytest.raises(SystemExit) as failure:
+        analysis.select_operator_dispatches(
+            workload,
+            keys,
+            {FIRST_PMC_GROUP_KEY: 8, SECOND_PMC_GROUP_KEY: 3},
+            ["torch"],
+        )
+
+    assert failure.value.code == 1
+    assert messages == [expected_message]
+    assert logged == []
+    assert workload.filter_dispatch_ids is user_filter
+    assert workload.ml_api_call_trees is previous_forest
+    assert workload.ml_api_call_trees == expected_forest
+    assert workload.raw_pmc is previous_raw
+
+
+@pytest.mark.parametrize(
+    ("user_filter", "expected_ids"),
+    [
+        pytest.param(None, [3, 8], id="no-user-restriction"),
+        pytest.param([], [3, 8], id="empty-cli-filter-is-unrestricted"),
+        pytest.param([" 8 ", "8", "99"], [8], id="normalize-id-values"),
+        pytest.param([" > 3 "], [8], id="normalize-exclusive-threshold"),
+    ],
+)
+def test_select_operator_dispatches_publishes_ids_before_success_log(
+    monkeypatch, user_filter, expected_ids
+):
+    workload = build_operator_workload()
+    workload.filter_dispatch_ids = user_filter
+    previous_forest = workload.ml_api_call_trees
+    expected_forest = deepcopy(previous_forest)
+    logged = []
+    monkeypatch.setattr(
+        analysis,
+        "console_log",
+        lambda *argv: logged.append((argv, list(workload.filter_dispatch_ids))),
+    )
+
+    analysis.select_operator_dispatches(
+        workload,
+        [FIRST_PMC_GROUP_KEY, SECOND_PMC_GROUP_KEY, FIRST_PMC_GROUP_KEY],
+        {FIRST_PMC_GROUP_KEY: 8, SECOND_PMC_GROUP_KEY: 3},
+        ["torch", "triton"],
+    )
+
+    assert workload.filter_dispatch_ids == expected_ids
+    assert logged == [
+        (
+            (
+                "ml api trace",
+                "PyTorch, Triton operator filter selected "
+                f"{len(expected_ids)} dispatch(es) for metric analysis.",
+            ),
+            expected_ids,
+        )
+    ]
+    assert workload.ml_api_call_trees is previous_forest
+    assert workload.ml_api_call_trees == expected_forest
+
+
+@pytest.mark.parametrize(
+    ("kernel_names", "kernel_filter", "expected_generic_message", "expected_ids"),
+    [
+        pytest.param(
+            [" second_kernel ", "first_kernel"],
+            [2],
+            "2 is an invalid kernel id. Please enter an id between 0-1",
+            (1, 0),
+            id="invalid-kernel-id-after-numbering",
+        ),
+        pytest.param(
+            [],
+            [0],
+            "No kernels found in this workload.",
+            (90, 91),
+            id="empty-top-keeps-unmapped-numbering",
+        ),
+    ],
+)
+def test_apply_sliced_kernel_top_numbers_before_generic_validation_fatal(
+    monkeypatch,
+    record_console_error_and_exit,
+    kernel_names,
+    kernel_filter,
+    expected_generic_message,
+    expected_ids,
+):
+    workload = build_operator_workload()
+    workload.filter_kernel_ids = kernel_filter
+    workload.filter_dispatch_ids = [8, 3]
+    previous_dispatches = workload.filter_dispatch_ids
+    previous_forest = workload.ml_api_call_trees
+    expected_forest = deepcopy(previous_forest)
+    expected_forest["1"][0].children[0].kernels[
+        "first_kernel"
+    ].kernel_id = expected_ids[0]
+    expected_forest["1"][0].children[1].kernels[
+        "second_kernel"
+    ].kernel_id = expected_ids[1]
+    previous_raw = workload.raw_pmc
+    adapter_messages = record_console_error_and_exit(monkeypatch)
+    generic_messages = []
+    monkeypatch.setattr(
+        file_io,
+        "console_error",
+        functools.partial(record_generic_kernel_error, generic_messages),
+    )
+
+    with pytest.raises(SystemExit) as failure:
+        analysis.apply_sliced_kernel_top(
+            workload,
+            pd.DataFrame({"Kernel_Name": kernel_names}),
+            argparse.Namespace(gpu_kernel=[kernel_filter]),
+            ["torch"],
+        )
+
+    assert failure.value.code == 1
+    assert generic_messages == [expected_generic_message]
+    assert adapter_messages == []
+    assert workload.ml_api_call_trees is previous_forest
+    assert workload.ml_api_call_trees == expected_forest
+    assert workload.filter_dispatch_ids is previous_dispatches
+    assert workload.raw_pmc is previous_raw
+
+
+def test_apply_sliced_kernel_top_empty_match_publishes_dispatches_before_fatal(
+    monkeypatch, record_console_error_and_exit
+):
+    workload = build_operator_workload()
+    workload.filter_dispatch_ids = [8]
+    workload.filter_kernel_ids = [0]
+    previous_dispatches = workload.filter_dispatch_ids
+    previous_forest = workload.ml_api_call_trees
+    expected_forest = deepcopy(previous_forest)
+    expected_forest["1"][0].children[0].kernels["first_kernel"].kernel_id = 1
+    expected_forest["1"][0].children[1].kernels["second_kernel"].kernel_id = 0
+    previous_raw = workload.raw_pmc
+    messages = record_console_error_and_exit(monkeypatch)
+
+    with pytest.raises(SystemExit) as failure:
+        analysis.apply_sliced_kernel_top(
+            workload,
+            pd.DataFrame({"Kernel_Name": ["second_kernel", "first_kernel"]}),
+            argparse.Namespace(gpu_kernel=[["0"]]),
+            ["torch"],
+        )
+
+    assert failure.value.code == 1
+    assert messages == ["No PyTorch operators matched the -k filter: [['0']]"]
+    assert workload.filter_dispatch_ids == []
+    assert workload.filter_dispatch_ids is not previous_dispatches
+    assert workload.ml_api_call_trees is previous_forest
+    assert workload.ml_api_call_trees == expected_forest
+    assert workload.raw_pmc is previous_raw
+
+
+@pytest.mark.parametrize(
+    "kernel_filter", [[], [1]], ids=["number-only", "restrict-kernel"]
+)
+def test_apply_sliced_kernel_top_preserves_stats_and_metadata(kernel_filter):
+    workload = build_operator_workload()
+    workload.filter_dispatch_ids = [8, 3, 8]
+    workload.filter_kernel_ids = kernel_filter
+    previous_dispatches = workload.filter_dispatch_ids
+    previous_forest = workload.ml_api_call_trees
+    expected_forest = deepcopy(previous_forest)
+    expected_forest["1"][0].children[0].kernels["first_kernel"].kernel_id = 1
+    expected_forest["1"][0].children[1].kernels["second_kernel"].kernel_id = 0
+    previous_raw = workload.raw_pmc
+
+    analysis.apply_sliced_kernel_top(
+        workload,
+        pd.DataFrame({"Kernel_Name": [" second_kernel ", "\tfirst_kernel\n"]}),
+        argparse.Namespace(gpu_kernel=[kernel_filter]),
+        ["torch"],
+    )
+
+    assert workload.ml_api_call_trees is previous_forest
+    assert workload.ml_api_call_trees == expected_forest
+    assert workload.raw_pmc is previous_raw
+    assert workload.filter_dispatch_ids == ([8, 8] if kernel_filter else [8, 3, 8])
+    if not kernel_filter:
+        assert workload.filter_dispatch_ids is previous_dispatches
+
+
+@pytest.mark.parametrize(
+    ("listing", "operator", "traced", "expected"),
+    [
+        pytest.param(None, None, [], None, id="no-action"),
+        pytest.param(
+            [], ["invalid:ignored"], ["torch"], None, id="bare-list-precedence"
+        ),
+        pytest.param(["user"], None, ["triton"], None, id="user-list"),
+        pytest.param(
+            None,
+            ["*relu*", "literal,comma"],
+            ["torch"],
+            {"torch": ["*relu*", "literal,comma"], "user": ["*relu*", "literal,comma"]},
+            id="unscoped-binds-with-literal-comma",
+        ),
+        pytest.param(
+            None,
+            ["user:region1"],
+            ["triton"],
+            {"user": ["region1"]},
+            id="user-filter",
+        ),
+    ],
+)
+def test_validate_operator_trace_options_binds_raw_tokens_for_workload(
+    listing, operator, traced, expected
+):
+    previous_tokens = deepcopy(operator)
+    configuration = {"trace_ml_api": traced}
+
+    bound = analysis.validate_operator_trace_options(
+        "/workload", listing, operator, configuration
+    )
+
+    assert bound == expected
+    assert operator == previous_tokens
+    assert configuration == {"trace_ml_api": traced}
+    if bound:
+        next(iter(bound.values())).append("only-in-bound-copy")
+        assert operator == previous_tokens
+
+
+@pytest.mark.parametrize(
+    ("listing", "operator", "configuration", "message"),
+    [
+        pytest.param(
+            [],
+            None,
+            {},
+            "Profile again with --trace-ml-api",
+            id="bare-list-needs-trace",
+        ),
+        pytest.param(
+            None,
+            ["user:region1"],
+            {"torch_trace": True},
+            "Profile again with --trace-ml-api",
+            id="legacy-config-requires-reprofile",
+        ),
+        pytest.param(
+            ["triton"],
+            None,
+            {"trace_ml_api": ["torch"]},
+            "--trace-ml-api triton",
+            id="uncollected-list-framework",
+        ),
+        pytest.param(
+            None,
+            ["triton:*"],
+            {"trace_ml_api": ["torch"]},
+            "--trace-ml-api triton",
+            id="uncollected-filter-framework",
+        ),
+    ],
+)
+def test_validate_operator_trace_options_identifies_failing_path(
+    monkeypatch,
+    record_console_error_and_exit,
+    listing,
+    operator,
+    configuration,
+    message,
+):
+    messages = record_console_error_and_exit(monkeypatch)
+
+    with pytest.raises(SystemExit):
+        analysis.validate_operator_trace_options(
+            "/failing-workload", listing, operator, configuration
+        )
+
+    assert len(messages) == 1
+    assert messages[0].startswith("/failing-workload: ")
+    assert message in messages[0]

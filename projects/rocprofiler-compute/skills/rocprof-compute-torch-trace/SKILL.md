@@ -13,6 +13,15 @@ Torch and Triton tracing are experimental. Every command needs
 `--experimental`, and option names can change between releases, so run
 `rocprof-compute profile --experimental --help` first.
 
+The options below were introduced in ROCm 10.3.0. On ROCm 10.2.0 and 10.1.0,
+profile with `--torch-trace`, `--triton-trace`, or `--ml-api-trace` for both.
+Analyze with `--list-torch-operators` / `--list-triton-operators`, or filter
+with `--torch-operator '*relu*'` / `--triton-operator '<pattern>'`. Those
+filters use globs and accept space- or comma-separated patterns. They have
+no framework prefixes or user-region selector. ROCm 10.1.0 builds and caches
+its Torch helper on first use; ROCm 10.2.0 introduced the prebuilt collector
+described below.
+
 ## 1. Check the requirements
 
 Torch tracing needs PyTorch installed against a matching ROCm. PyTorch 2.13
@@ -53,7 +62,8 @@ do not get `|triton` ranges. Attribute them with `--trace-ml-api torch`.
 
 The two combine as `--trace-ml-api torch triton`. User-defined ROCTx regions
 are included with every `--trace-ml-api` run. A bare `--trace-ml-api` traces
-all supported ML frameworks as well.
+all supported ML frameworks as well. Pass framework values separately with
+spaces; the accepted values are `torch` and `triton`, without `user`.
 
 Tracing adds overhead on top of the usual counter replay. Profile a few
 iterations of a steady-state model rather than a full training run, and skip
@@ -108,6 +118,10 @@ launch statistics, so it also shows which operators are worth opening.
 
 The Triton equivalent is `--list-operators triton`.
 
+The accepted values are `torch`, `triton`, and `user`, separated by spaces.
+For example, `--list-operators torch user` lists both groups. A bare
+`--list-operators` lists every captured operator and user ROCTx region.
+
 `--list-operators user` lists each user ROCTx region with everything that
 ran inside it.
 
@@ -121,10 +135,15 @@ rocprof-compute analyze \
 
 Patterns are shell-style globs, not regexes, matched against a `/`-separated
 operator hierarchy. `*relu*` contains relu, `*/aten::addmm` is an addmm leaf
-on the reconstructed path. Several patterns can be given. A pattern without
-a prefix uses the prefix before it. Bare `--operator` or `**` matches
-everything.
-Quote patterns so the shell does not expand them.
+on the reconstructed path. Use `torch:`, `triton:`, or `user:` to limit a
+pattern to that group. An unprefixed pattern uses the most recent prefix;
+before any prefix, it matches every traced framework and user region.
+Separate patterns with spaces and quote them so the shell does not expand
+them. Commas stay in the pattern. Bare `--operator` matches everything.
+A `**` pattern still follows the prefix rule.
+
+For example, `--operator 'torch:*conv*' '*relu*' 'triton:*matmul*'`
+matches Torch conv and relu operators, plus Triton matmul kernels.
 
 `--operator 'triton:*rmsnorm_kernel*'` works the same way.
 
