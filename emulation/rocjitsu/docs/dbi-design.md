@@ -112,6 +112,14 @@ current limits.
 
 ### Key design constraint
 
+Explicit `InstrumentationOptions::entries` requests plan each selected descriptor's
+reachable code, register preservation, bootstrap and resource changes separately,
+then commit one combined original-text edit transaction. Every selected or native
+entry must have a closed, disjoint scope. Kernarg-preloaded siblings are rejected:
+their additional firmware entry is outside this bounded ownership model. Validation
+records retain caller insertion order, including a `KernelEntry` callback and an
+ordinary point sharing the same source offset.
+
 AfterInst requires GPR indexing and VSKIP to be proven disabled at the
 observation point; ordinary callable sites also reject known-enabled states. Validation follows each CFG predecessor back to its last
 MODE write, including loop backedges; an explicit disabling write cuts off that
