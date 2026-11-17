@@ -23,11 +23,11 @@ leave out the panels in LEFT_OUT_PANELS.
 import json
 from typing import Any, Dict, List, Tuple
 
+import common
 import pytest
 from unit.rocprof_compute_soc.metric_library.test_metric_library_sync import (
     read_rows,
     row_metric_id,
-    unshown_file_ids,
 )
 
 import config
@@ -65,7 +65,7 @@ def structure_errors(
     for panel_id in LEFT_OUT_PANELS.get(arch, ()):
         del expected[panel_id]
     actual = views_to_panel_configs(views, library.metrics, {})
-    for file_id in unshown_file_ids(arch):
+    for file_id in common.unshown_file_ids(arch):
         expected.pop(int(file_id), None)
         actual.pop(int(file_id), None)
     if list(expected) != list(actual):
