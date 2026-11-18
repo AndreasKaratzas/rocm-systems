@@ -32,7 +32,7 @@ using rocr::core::NextPollNapUs;
 
 // The documented bounds must be sane: a positive floor below the ceiling.
 TEST(PollBackoffTest, BoundsAreOrdered) {
-  EXPECT_GT(kPollNapFloorUs, 0);
+  EXPECT_GT(kPollNapFloorUs, 0u);
   EXPECT_GT(kPollNapCeilingUs, kPollNapFloorUs);
 }
 

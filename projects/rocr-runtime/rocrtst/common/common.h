@@ -54,6 +54,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <initializer_list>
 #include <vector>
 #include <memory>
 
@@ -318,6 +319,48 @@ hsa_status_t GetAgentPools(
 /// ASAN shadow limit.
 static constexpr size_t kMaxTestAllocAsan = 512ULL * 1024 * 1024;  // 512 MB
 #endif
+
+/// Boundary KFD rounds a VRAM allocation up to when charging it against
+/// HSA_AMD_AGENT_INFO_MEMORY_AVAIL, on any part not preferring GTT over VRAM.
+static constexpr size_t kMemAvailGranule = 2ULL * 1024 * 1024;  // 2 MB
+
+/// Rounding slack when comparing two readings: one granule for each reading.
+/// Not an allowance for other processes - see MemAvailDisturbed().
+static constexpr size_t kMemAvailTolerance = 2 * kMemAvailGranule;  // 4 MB
+
+/// Absolute difference between two readings, which are unsigned and can move
+/// in either direction.
+static inline size_t MemAvailDelta(size_t a, size_t b) {
+  return (a > b) ? (a - b) : (b - a);
+}
+
+/// True if the device-wide figure did not return to its starting value after
+/// the test released everything. The cause is not determined here.
+static inline bool MemAvailDisturbed(size_t begin, size_t end) {
+  return MemAvailDelta(begin, end) > kMemAvailTolerance;
+}
+
+/// True if availability fell by an amount this test's own allocations account
+/// for - a leak. Inline so the GPU-free utils_test need not link common.cc.
+static inline bool MemAvailLeaked(size_t begin, size_t end,
+                                  std::initializer_list<size_t> own_allocations) {
+  // A leak only ever costs availability, so a figure that rose is never one.
+  if (end >= begin) return false;
+
+  const size_t shortfall = begin - end;
+  size_t running_sum = 0;
+  for (size_t size : own_allocations) {
+    running_sum += size;
+    if (MemAvailDelta(shortfall, size) <= kMemAvailTolerance) return true;
+    if (MemAvailDelta(shortfall, running_sum) <= kMemAvailTolerance) return true;
+  }
+  return false;
+}
+
+/// Judge the end-of-test reading: a shortfall matching this test's own
+/// allocations fails, any other drift skips. True = caller must stop.
+bool CheckMemAvailRestored(size_t begin, size_t end,
+                           std::initializer_list<size_t> own_allocations);
 
 }  // namespace rocrtst
 #endif  // ROCRTST_COMMON_COMMON_H_

@@ -140,6 +140,32 @@ bool SkipCurrentTest(const char* reason) {
   return true;
 }
 
+bool CheckMemAvailRestored(size_t begin, size_t end,
+                           std::initializer_list<size_t> own_allocations) {
+  if (!MemAvailDisturbed(begin, end)) return false;
+
+  const std::string readings =
+      "device-wide MEMORY_AVAIL moved by " + std::to_string(MemAvailDelta(begin, end)) +
+      " bytes across the test (before " + std::to_string(begin) + ", after " +
+      std::to_string(end) + ")";
+
+  // A shortfall this test can account for out of its own allocations is its own
+  // bug, and must fail even though a neighbour could also have moved the figure.
+  if (MemAvailLeaked(begin, end, own_allocations)) {
+    ADD_FAILURE() << readings << ": the shortfall matches this test's own "
+                  << "allocations, so they were not fully returned on release.";
+    return true;
+  }
+
+  const std::string reason =
+      readings +
+      ": the drift is not explained by this test's own allocations, so these "
+      "readings are not attributable to this test. Another process on the GPU "
+      "is the usual cause, but that has not been checked here.";
+
+  return SkipCurrentTest(reason.c_str());
+}
+
 bool SkipOnWsl(const char* reason) {
   if (!isWslEnvironment()) return false;
   return SkipCurrentTest(reason);

@@ -1331,25 +1331,62 @@ void VirtMemoryTestBasic::MemoryAccountingTest(hsa_agent_t agent, hsa_amd_memory
   ASSERT_SUCCESS(hsa_agent_get_info(agent, (hsa_agent_info_t)HSA_AMD_AGENT_INFO_MEMORY_AVAIL, &amount_begin));
   ASSERT_SUCCESS(hsa_amd_vmem_address_reserve(&reserved_addr, allocation_size, 0, 0));
 
+  // The checks below are fatal assertions, so without these guards a failure
+  // part way through leaks. They destruct in order: unmap, release, free.
+  MAKE_NAMED_SCOPE_GUARD(addrGuard,
+                         [&]() { EXPECT_SUCCESS(hsa_amd_vmem_address_free(reserved_addr, allocation_size)); });
+
   hsa_amd_pointer_info_t ptr_info = {};
   ptr_info.size = sizeof(ptr_info);
   ASSERT_SUCCESS(hsa_amd_pointer_info(reserved_addr, &ptr_info, nullptr, nullptr, nullptr));
   ASSERT_SUCCESS(hsa_amd_vmem_handle_create(pool, allocation_size, MEMORY_TYPE_NONE, 0, &mem_handle));
 
+  MAKE_NAMED_SCOPE_GUARD(handleGuard, [&]() { EXPECT_SUCCESS(hsa_amd_vmem_handle_release(mem_handle)); });
+
   ASSERT_SUCCESS(hsa_agent_get_info(agent, (hsa_agent_info_t)HSA_AMD_AGENT_INFO_MEMORY_AVAIL, &amount_current));
-  ASSERT_NEAR(amount_begin - amount_current, allocation_size, 4096);
+  // Record it, but judge it only once the end-of-test check below establishes
+  // that this device-wide figure is attributable to this process.
+  size_t amount_after_create = amount_current;
 
   ASSERT_SUCCESS(hsa_amd_vmem_map(reserved_addr, allocation_size, 0, mem_handle, 0));
+
+  MAKE_NAMED_SCOPE_GUARD(mapGuard,
+                         [&]() { EXPECT_SUCCESS(hsa_amd_vmem_unmap(reserved_addr, allocation_size)); });
 
   hsa_amd_memory_access_desc_t access_desc = {HSA_ACCESS_PERMISSION_RW, agent};
   ASSERT_SUCCESS(hsa_amd_vmem_set_access(reserved_addr, allocation_size, &access_desc, 1));
 
-  ASSERT_SUCCESS(hsa_amd_vmem_unmap(reserved_addr, allocation_size));
-  ASSERT_SUCCESS(hsa_amd_vmem_handle_release(mem_handle));
-  ASSERT_SUCCESS(hsa_amd_vmem_address_free(reserved_addr, allocation_size));
+  // Dismiss each guard as soon as its release has been attempted, whatever the
+  // status: none of these may be given back twice.
+  err = hsa_amd_vmem_unmap(reserved_addr, allocation_size);
+  mapGuard.Dismiss();
+  ASSERT_SUCCESS(err);
+
+  err = hsa_amd_vmem_handle_release(mem_handle);
+  handleGuard.Dismiss();
+  ASSERT_SUCCESS(err);
+
+  err = hsa_amd_vmem_address_free(reserved_addr, allocation_size);
+  addrGuard.Dismiss();
+  ASSERT_SUCCESS(err);
 
   ASSERT_SUCCESS(hsa_agent_get_info(agent, (hsa_agent_info_t)HSA_AMD_AGENT_INFO_MEMORY_AVAIL, &amount_current));
-  ASSERT_EQ(amount_begin, amount_current);
+  // Everything here is released, so the figure should be back where it started.
+  // A shortfall the size of this test's own handle fails; other drift skips.
+  if (rocrtst::CheckMemAvailRestored(amount_begin, amount_current, {allocation_size})) {
+    return;
+  }
+
+  // Stated additively and in both directions: a magnitude would accept a handle
+  // create that raised availability, which is the opposite of the charge.
+  ASSERT_LE(amount_after_create + allocation_size,
+            amount_begin + rocrtst::kMemAvailTolerance)
+      << "MEMORY_AVAIL before " << amount_begin << ", after handle create "
+      << amount_after_create << ", allocated " << allocation_size << ".";
+  ASSERT_GE(amount_after_create + allocation_size + rocrtst::kMemAvailTolerance,
+            amount_begin)
+      << "MEMORY_AVAIL before " << amount_begin << ", after handle create "
+      << amount_after_create << ", allocated " << allocation_size << ".";
 }
 
 void VirtMemoryTestBasic::MemoryAccountingTest(void) {

@@ -729,6 +729,20 @@ set_tests_properties(intercept_queue_logic_test PROPERTIES
   LABELS "quick;standard;pr;pre-commit"
   TIMEOUT 60)
 
+# GPU-free unit tests for the rocrtst common/ helpers: the memory-availability
+# comparison in common.h and the polling backoff.
+set(ROCRTST_UTIL_TEST_NAME "rocrtst_utils_test")
+add_subdirectory(${ROCRTST_ROOT}/common/utils_test
+  "${PROJECT_BINARY_DIR}/utils_test")
+# Output alongside the other test binaries so the installed CTestTestfile below
+# reaches all of them by the same relative path.
+set_target_properties(${ROCRTST_UTIL_TEST_NAME} PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}")
+add_test(NAME ${ROCRTST_UTIL_TEST_NAME} COMMAND ${ROCRTST_UTIL_TEST_NAME})
+set_tests_properties(${ROCRTST_UTIL_TEST_NAME} PROPERTIES
+  LABELS "quick;standard;pr;pre-commit"
+  TIMEOUT 60)
+
 #Build kernels
 add_custom_target(rocrtst_kernels ALL DEPENDS ${HSACO_TARG_LIST})
 
@@ -750,6 +764,9 @@ install(TARGETS ${ROCRTST}
 
 install(TARGETS intercept_queue_logic_test
         RUNTIME DESTINATION bin)
+
+# ${ROCRTST_UTIL_TEST_NAME} installs itself from the directory that defines it:
+# install(TARGETS) cannot name a cross-directory target before CMake 3.13.
 
 # Install platform configuration file
 install(FILES ${ROCRTST_ROOT}/config/platform_config.yaml
@@ -801,6 +818,8 @@ if(EXISTS "${TEST_CATEGORIES_CMAKE}" AND EXISTS "${TEST_CATEGORIES_YAML}")
         "\n"
         "add_test(intercept_queue_logic_test \"../intercept_queue_logic_test\")\n"
         "set_tests_properties(intercept_queue_logic_test PROPERTIES LABELS \"quick;standard;pr;pre-commit\" TIMEOUT 60)\n\n"
+        "add_test(${ROCRTST_UTIL_TEST_NAME} \"../${ROCRTST_UTIL_TEST_NAME}\")\n"
+        "set_tests_properties(${ROCRTST_UTIL_TEST_NAME} PROPERTIES LABELS \"quick;standard;pr;pre-commit\" TIMEOUT 60)\n\n"
     )
 
     install(
