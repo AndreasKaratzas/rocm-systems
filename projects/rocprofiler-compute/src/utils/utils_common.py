@@ -702,11 +702,19 @@ def format_table_id(config_id: int) -> str:
     return f"{config_id // 100}.{config_id % 100}"
 
 
+def format_row_id(config_id: int, index: int) -> str:
+    """Return the "block.table.index" id of a table config's row, e.g. 1802, 3 ->
+    "18.2.3"."""
+    return f"{format_table_id(config_id)}.{index}"
+
+
 def metric_ids_by_name(data_config: Dict[str, Any]) -> Dict[str, str]:
     """Map each metric name of a metric_table config to its "block.table.index" id."""
-    table_id = format_table_id(data_config["id"])
     metrics = data_config.get("metric") or {}
-    return {name: f"{table_id}.{index}" for index, name in enumerate(metrics)}
+    return {
+        name: format_row_id(data_config["id"], index)
+        for index, name in enumerate(metrics)
+    }
 
 
 def resolve_block_token(token: str, alias_map: Dict[str, str]) -> Optional[str]:
