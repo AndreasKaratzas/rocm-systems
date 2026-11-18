@@ -16,6 +16,9 @@ Full documentation for amd_smi_lib is available at [https://rocm.docs.amd.com/pr
 
 ### Resolved Issues
 
+- **Corrected the fabric bandwidth unit from Mb/s to MB/s**.
+  - `amd-smi fabric` and the documentation of `amdsmi_fabric_info_v1_t.bandwidth` now give the unit as MB/s: the estimated total bandwidth between pairs of accelerators. The value, the ABI layout and the CSV column `bandwidth_mb_s` are unchanged.
+
 - **Fixed `amd-smi ras --cper` crashing with `TypeError` when no GPU devices are available**.
   - When the `amdgpu` driver is not loaded, the command now exits with a clear driver-not-loaded message and exit code 206 instead of an unhandled exception.
 
