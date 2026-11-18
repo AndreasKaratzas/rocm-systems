@@ -3,7 +3,8 @@
 
 """Check that the metric library matches the analysis configs, arch by arch.
 
-Until the cutover, the library copies the analysis configs:
+Temporary: this test is deleted with the analysis configs. Until then, the library
+copies the analysis configs:
 
 - every equation of a panel row is a library formula, and every formula has a row;
 - every row has the unit of its metric;
