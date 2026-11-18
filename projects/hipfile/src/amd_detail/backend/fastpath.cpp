@@ -330,6 +330,16 @@ async_fastpath_copy(void *userArgs)
 {
     auto op = static_cast<AsyncOp *>(userArgs);
 
+    // The fastpath may have been disabled since this op was queued. As with
+    // sync IO, fall back instead of attempting the IO.
+    if (!Context<Configuration>::get()->fastpath()) {
+        op->bytes_transferred_internal = -hipFileInternalError;
+        if (op->failover) {
+            op->failover->fallback_needed = true;
+        }
+        return;
+    }
+
     const hoff_t buffer_offset = *get_variant_ptr(op->buffer_offset);
     const hoff_t file_offset   = *get_variant_ptr(op->file_offset);
     const size_t size          = std::min(*get_variant_ptr(op->size), hipFile::getMaxRwCount());

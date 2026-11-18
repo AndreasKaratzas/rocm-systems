@@ -1196,6 +1196,7 @@ struct AsyncFastpathCopyOp : public ::testing::Test,
             .Times(AnyNumber())
             .WillRepeatedly(Return(reinterpret_cast<hipStream_t>(0xFEFEFEFE)));
         EXPECT_CALL(mhip, hipInit).Times(AnyNumber());
+        EXPECT_CALL(mcfg, fastpath()).Times(AnyNumber()).WillRepeatedly(Return(true));
 
         op = std::make_shared<AsyncOp>(io_type, mfile, mbuffer, mstream, &size, &file_offset, &buffer_offset,
                                        &bytes_transferred);
@@ -1307,6 +1308,56 @@ TEST_P(AsyncFastpathCopyOp, ENOTTYDisablesFastpathAndSetsFallbackNeeded)
     async_fastpath_copy(op.get());
     ASSERT_EQ(op->bytes_transferred_internal, -hipFileInternalError);
     ASSERT_TRUE(op->failover->fallback_needed);
+}
+
+// The fastpath was disabled after this op was queued. StrictMock<MHip> fails
+// the test if the AIS call is attempted.
+TEST_P(AsyncFastpathCopyOp, fastpathDisabledAfterQueueingSetsFallbackNeeded)
+{
+    op->failover = std::make_shared<AsyncFailoverState>();
+    EXPECT_CALL(mcfg, fastpath()).WillOnce(Return(false));
+    async_fastpath_copy(op.get());
+    ASSERT_EQ(op->bytes_transferred_internal, -hipFileInternalError);
+    ASSERT_TRUE(op->failover->fallback_needed);
+}
+
+// Two ops queued while the fastpath was enabled. The first fails with ENOTTY
+// and disables the fastpath, so the second falls back without the AIS call.
+TEST_P(AsyncFastpathCopyOp, ENOTTYSkipsFastpathForQueuedOp)
+{
+    bool fastpath_enabled{true};
+    EXPECT_CALL(mcfg, fastpath()).WillRepeatedly([&fastpath_enabled] { return fastpath_enabled; });
+    EXPECT_CALL(mcfg, fastpath(false)).WillOnce([&fastpath_enabled](bool enabled) {
+        fastpath_enabled = enabled;
+    });
+
+    ssize_t second_bytes_transferred{0};
+    auto    second_op = std::make_shared<AsyncOp>(io_type, mfile, mbuffer, mstream, &size, &file_offset,
+                                                  &buffer_offset, &second_bytes_transferred);
+    op->failover        = std::make_shared<AsyncFailoverState>();
+    second_op->failover = std::make_shared<AsyncFailoverState>();
+
+    // Only the first op gets as far as the AIS call.
+    EXPECT_CALL(*mbuffer, getLength).WillOnce(Return(size));
+    EXPECT_CALL(*mfile, unbufferedFd).WillOnce(Return(42));
+    if (io_type == IoType::Read) {
+        EXPECT_CALL(mhip, hipAmdFileRead).WillOnce(Throw(std::system_error(ENOTTY, std::generic_category())));
+    }
+    else {
+        EXPECT_CALL(mhip, hipAmdFileWrite).WillOnce(Throw(std::system_error(ENOTTY, std::generic_category())));
+    }
+
+    async_fastpath_copy(op.get());
+    async_fastpath_copy(second_op.get());
+    ASSERT_TRUE(op->failover->fallback_needed);
+    ASSERT_TRUE(second_op->failover->fallback_needed);
+}
+
+TEST_P(AsyncFastpathCopyOp, fastpathDisabledAfterQueueingWithoutFailoverSetsError)
+{
+    EXPECT_CALL(mcfg, fastpath()).WillOnce(Return(false));
+    async_fastpath_copy(op.get());
+    ASSERT_EQ(op->bytes_transferred_internal, -hipFileInternalError);
 }
 
 TEST_P(AsyncFastpathCopyOp, ineligibleSystemErrorLeavesFallbackNotNeeded)

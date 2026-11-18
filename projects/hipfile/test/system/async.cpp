@@ -38,6 +38,7 @@
 #include <string>
 #include <sys/types.h>
 #include <system_error>
+#include <thread>
 #include <tuple>
 #include <variant>
 #include <vector>
@@ -1054,6 +1055,41 @@ struct FaultInjectingHip : public Hip {
     }
 };
 
+// Blocks a stream until released (or destroyed), so work can be queued before
+// any of it runs.
+struct StreamGate {
+    std::atomic<bool> open{false};
+    std::atomic<bool> finished{false};
+    bool              launched{false};
+
+    explicit StreamGate(hipStream_t stream)
+    {
+        launched = hipLaunchHostFunc(stream, wait, this) == hipSuccess;
+        EXPECT_TRUE(launched);
+    }
+    ~StreamGate()
+    {
+        release();
+        // Don't free the gate while the stream is still reading it.
+        while (launched && !finished) {
+            std::this_thread::yield();
+        }
+    }
+    void release()
+    {
+        open = true;
+    }
+
+    static void wait(void *arg)
+    {
+        auto gate = static_cast<StreamGate *>(arg);
+        while (!gate->open) {
+            std::this_thread::yield();
+        }
+        gate->finished = true;
+    }
+};
+
 // Exercises async backend failover end-to-end. Both backends are enabled so the fastpath is selected
 // (score 100) and the fallback is registered and eligible. A fault injected into the fastpath IO then
 // determines, at stream-execution time, whether the fallback engages. The AIS gate guarantees the
@@ -1157,6 +1193,30 @@ TEST_P(HipAsyncFailover, ENOTTYDisablesFastpath)
               HIPFILE_SUCCESS);
     ASSERT_EQ(hipStreamSynchronize(stream), hipSuccess);
     ASSERT_EQ(bytes_transferred, io_size);
+    ASSERT_EQ(1, fault.calls);
+    HipFileDataOps::assertFileAndMemoryRegionsMatch(dev_ptr, buffer_offset, tf.fd, file_offset, io_size);
+}
+
+// Both IOs are queued before either runs. Once the first fails with ENOTTY,
+// the second falls back without attempting the fastpath.
+TEST_P(HipAsyncFailover, ENOTTYSkipsFastpathForQueuedIo)
+{
+    FaultInjectingHip    fault{ENOTTY};
+    ContextOverride<Hip> guard{&fault};
+    ssize_t              second_bytes_transferred{0};
+
+    // Hold the stream until both IOs are queued. Otherwise the first IO could
+    // disable the fastpath before the second is scored, and the second would
+    // never be queued for the fastpath.
+    StreamGate gate{stream};
+    ASSERT_EQ(io_op(fh, dev_ptr, &io_size, &file_offset, &buffer_offset, &bytes_transferred, stream),
+              HIPFILE_SUCCESS);
+    ASSERT_EQ(io_op(fh, dev_ptr, &io_size, &file_offset, &buffer_offset, &second_bytes_transferred, stream),
+              HIPFILE_SUCCESS);
+    gate.release();
+    ASSERT_EQ(hipStreamSynchronize(stream), hipSuccess);
+    ASSERT_EQ(bytes_transferred, io_size);
+    ASSERT_EQ(second_bytes_transferred, io_size);
     ASSERT_EQ(1, fault.calls);
     HipFileDataOps::assertFileAndMemoryRegionsMatch(dev_ptr, buffer_offset, tf.fd, file_offset, io_size);
 }
