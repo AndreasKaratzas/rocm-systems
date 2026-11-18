@@ -14,6 +14,9 @@ Full documentation for amd_smi_lib is available at [https://rocm.docs.amd.com/pr
 - **Repeated `amd-smi` device selections now combine**.  
   - Repeated `--gpu`, `--cpu`, `--core`, and `--nic` options combine without duplicates. `reset --gpureset -g all -g 0` now resets every GPU (previously GPU 0 only); `set -g 0 -C CPX -g 1 -C SPX` now applies SPX to GPUs 0 and 1 (previously GPU 1 only). Remove earlier device options to retain the previous target set.
 
+- **`amdsmi_get_gpu_fabric_info()` now returns `vpod_active_accelerators` as the documented bitmap**.
+  - Bit N set means accelerator ID N is active, so a vPoD of more than 32 accelerators is reported whole; the array used to hold the first 32 active IDs, and callers that read it as a list of IDs must decode the bitmap. `fabric_version` now reads `1` once any field is read. `amd-smi fabric` lists every active ID. The ABI layout is unchanged.
+
 ### Resolved Issues
 
 - **Fixed `amd-smi ras --cper` crashing with `TypeError` when no GPU devices are available**.
@@ -27,6 +30,9 @@ Full documentation for amd_smi_lib is available at [https://rocm.docs.amd.com/pr
 
 - **Setting the current memory partition now cancels a pending memory partition change**.  
   - Previously, amd-smi did not send this request to the driver, so the next driver reload still applied a different partition requested earlier. Older amdgpu drivers ignore the request because of a driver bug and still apply the partition requested earlier; update to an amdgpu driver that has the fix. If a read-only `/sys` (for example, in a container) refuses the request, amd-smi now reports an error instead of success.
+
+- **Fixed `amdsmi_get_gpu_fabric_info()` reporting `addr_mode` and the configured `accel_state` stages as `UNKNOWN`**.
+  - The library now recognizes the driver's `source-aliasing`, `source-identification`, `ppod_configured` and `vpod_configured`; both configured stages read `CONFIGURED`. An empty `local_accels` no longer reads as accelerator ID 0.
 
 ## amd_smi_lib for ROCm 10.2.0
 
