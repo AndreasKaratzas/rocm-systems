@@ -52,6 +52,7 @@ Full documentation for RCCL is available at [https://rccl.readthedocs.io](https:
 * `NCCL_GIN_GDAKI_CQ_TYPE` (default `0`): completion-queue type for the GDAKI IB GIN backend.
 * `NCCL_GIN_GDAKI_Q_COUNTER` (default `1`): diagnostic only. Gives GDAKI queue pairs a dedicated GIN-owned queue-counter set; `0` leaves them on the device's default counter set.
 * `NCCL_NVLS_FIFO_LAYOUT` (default `-1`): selects the NVLS staging-FIFO slot-addressing layout (`0`, `1` or `2`); `-1` picks automatically by topology and architecture.
+* `NCCL_EMIT_LTO_IR` CMake option (default `OFF`): builds and installs `librccl_device.ltoir` to `lib/rccl`, the AMDGPU counterpart of NCCL's LTO IR library. It has the same device API surface as `librccl_device.bc` (`NCCL_EMIT_LLVM_IR=ON`), but is compiled without running the optimizer, so inlining happens at the consumer's device link with the real call sites visible. Link it the same way as the `.bc` (`-Xoffload-linker librccl_device.ltoir`). `LTO_IR_ARCH` and `LTO_IR_CXX_STD` select its target and C++ standard; when left empty they follow `BITCODE_LIB_ARCH` and `BITCODE_CXX_STD`. Either option can be enabled without the other.
 
 ### Changed
 * An empty `NCCL_GIN_TYPE` now counts as unset for the in-tree GIN backends, as it already did for the backend filter: Anvil SDMA initializes and `RCCL_GIN_TYPE_LIST` applies. Previously an empty value turned Anvil SDMA off.
@@ -106,6 +107,7 @@ Full documentation for RCCL is available at [https://rccl.readthedocs.io](https:
 * `NCCL_P2P_NET_CHUNKSIZE` / `NCCL_P2P_PCI_CHUNKSIZE` / `NCCL_P2P_NVL_CHUNKSIZE` default changed from the literals `1 << 17` / `1 << 17` / `1 << 19` to `-2`, a sentinel for the built-in default. The resolved default on RCCL is unchanged, and RCCL's gfx942/gfx950 P2P net chunk-size override still applies first.
 * `NCCL_IB_GID_INDEX` / `NCCL_IB_SL` / `NCCL_IB_TC` / `NCCL_IB_FIFO_TC` default changed `-1` -> `NCCL_PARAM_VAL_AUTO`, a renamed sentinel for the same automatic value; behavior is unchanged.
 * `NCCL_IB_USE_INLINE` / `NCCL_IB_ECE_ENABLE` / `NCCL_IB_WARN_RAIL_LOCAL` / `NCCL_GDR_FLUSH_DISABLE` default literals changed from `0`/`1` to the equivalent `false`/`true`; behavior is unchanged.
+* The GPUDirect RDMA flush in the `IB` and `IB-CAST` transports posts the RO=0 scratchpad RDMA_WRITE and the flush RDMA_READ in one `ibv_post_send` instead of two, when the scratchpad is in use (`RCCL_GDR_FLUSH_GPU_MEM_NO_RELAXED_ORDERING`, default `1`). The RC send queue still executes the write before the read, so the fence is kept, and each flush rings one doorbell instead of two.
 
 ### Removed
 
@@ -151,6 +153,8 @@ Full documentation for RCCL is available at [https://rccl.readthedocs.io](https:
 * Fixed a Socket communicator's cached "no GPU Direct RDMA" verdict being reused by later IB communicators on the same GPU, including `ncclCommSplit` children.
 * Fixed collectives failing with `unspecified launch failure` when `NCCL_ENQUEUE_REARCH_ENABLE=1`. The re-architected enqueue path sized thread blocks for NVIDIA's 32-thread warp plus a sync warp, so ring and tree collectives launched up to 576 threads per block on 64-lane AMD GPUs, past the 256 that RCCL kernels are built for. With `NCCL_PROTO=LL128` it also requested `ncclAllReduce`, `ncclAllGather` and `ncclBroadcast` kernels that RCCL does not build. The path now sizes blocks, slices single-node rings and selects kernels the way the default path does, and keeps the `ncclAllReduceWithBias` accumulator, which it used to drop and so returned wrong results. Direct ReduceScatter is not used on this path, because the path does not issue the per-peer transfers that Direct ReduceScatter needs.
 * Fixed mid-size multi-node Simple send latency on builds without the 128-bit global load/store builtins (for example ROCm older than 7.0.2, or `-DDWORDX4_INTRINSICS=OFF`). On these builds every Simple send took the full system-scope fence, which writes back and invalidates the L2 cache, even when the cheap post-send fence was enabled. Simple sends to unregistered buffers use the cheap post-send fence again. Registered user buffers and point-to-point sends keep the full fence.
+* Fixed PCI device lookup with `RCCL_USE_AMD_SMI_LIB=1` for device numbers `0x10` through `0x1f`, which previously lost their high bit and could select the wrong GPU or fail lookup.
+* Fixed AlltoAllv leaving its internal group open or replay recording suppressed after a failed send/receive, and dropping `ncclInProgress` from group completion. If any rank is nonblocking, all ranks use the point-to-point path instead of the synchronous CE metadata exchange. Replay suppression is thread-local so overlapping calls cannot leave recording disabled.
 
 ### Known issues
 
