@@ -16,10 +16,8 @@ id comes from its file name (0300_memory_chart.yaml is panel 300), a table's id 
 position in the panel (301 is the first table), and a row's numeric id (3.1.0) from its
 position in the table.
 
-Analyze, its listings and the memory chart read their panel configs here
-(arch_panel_configs()), and the -b panel aliases come from the views. Profile counters
-still come from analysis_configs/, whose structure tools/validate_views.py keeps equal
-to the views'.
+Analyze, its listings, the memory chart and profile's counter selection read their
+panel configs here (arch_panel_configs()), and the -b panel aliases come from the views.
 Standard library and the vendored YAML only: profile mode imports it.
 """
 

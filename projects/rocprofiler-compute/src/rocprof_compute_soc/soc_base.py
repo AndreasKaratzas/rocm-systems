@@ -22,7 +22,11 @@ from typing import (
 import config
 from roofline.run_benchmark import BENCHMARKING_SUPPORTED, run_roofline_benchmark
 from utils import amdsmi_interface, rocprofv3_avail_interface
-from utils.analysis_views import get_arch_alias_to_panel_id
+from utils.analysis_views import (
+    arch_panel_configs,
+    get_arch_alias_to_panel_id,
+    has_views,
+)
 from utils.counters.allocator import (
     allocate_single_pass_metrics,
     metric_counter_sets,
@@ -42,7 +46,6 @@ from utils.utils_common import (
     MEMBW_ANALYSIS_PANEL_ID,
     METRIC_ID_RE,
     add_counter_extra_config_input_yaml,
-    canonical_config_arch,
     convert_metric_id_to_panel_info,
     create_temp_rocprofiler_metrics_path,
     is_only_pc_sampling,
@@ -388,13 +391,12 @@ class OmniSoC_Base:
         )
 
     def _profile_panel_configs(self) -> "OrderedDict[int, Dict[str, Any]]":
-        """Return the panel configs whose metrics profile collects counters for."""
+        """Return the panel configs whose metrics profile collects counters for:
+        the arch's analysis views, with their metrics from the metric library."""
         arch = self.__arch
-        if not arch:
+        if not arch or not has_views(arch):
             return OrderedDict()
-        return load_panel_configs([
-            str(config.analysis_configs_dir / (canonical_config_arch(arch) or arch))
-        ])
+        return arch_panel_configs(arch)
 
     def _iter_profile_metrics(
         self, panel_configs: "OrderedDict[int, Dict[str, Any]]"
