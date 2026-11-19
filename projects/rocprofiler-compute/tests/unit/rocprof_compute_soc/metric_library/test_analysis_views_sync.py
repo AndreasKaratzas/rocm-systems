@@ -21,6 +21,7 @@ leave out the panels in LEFT_OUT_PANELS.
 """
 
 import json
+import re
 from typing import Any, Dict, List, Tuple
 
 import common
@@ -40,11 +41,7 @@ from utils.analysis_views import (
     row_metric_ids,
     views_to_panel_configs,
 )
-from utils.utils_common import (
-    format_row_id,
-    get_arch_panel_id_to_alias,
-    load_panel_configs,
-)
+from utils.utils_common import format_row_id, load_panel_configs, load_yaml
 
 # Table settings that must match the panel's; rows are compared by metric id.
 TABLE_KEYS = ("title", "header", "source", "columnwise")
@@ -182,13 +179,27 @@ def _shows_equation(row: Dict[str, Any]) -> bool:
 
 
 def _alias_errors(views: Dict[int, Dict[str, Any]], arch: str) -> List[str]:
-    template_aliases = get_arch_panel_id_to_alias(arch)
+    template_aliases = _template_aliases(arch)
     return [
         f"panel {panel_number}: -b alias {alias!r}, config template has "
         f"{template_aliases.get(panel_number)!r}"
         for panel_number, alias in panel_aliases(views).items()
         if template_aliases.get(panel_number) != alias
     ]
+
+
+def _template_aliases(arch: str) -> Dict[str, str]:
+    """Return panel number -> -b alias from the config template whose name prefix
+    matches arch, "" for none; {} when no template matches."""
+    for path in sorted(config.analysis_configs_dir.glob("*_config_template.yaml")):
+        match = re.match(r"(gfx\d+)_config_template\.yaml$", path.name)
+        if match and arch.startswith(match.group(1)):
+            panels = (load_yaml(path) or {}).get("panels") or []
+            return {
+                str(panel["panel_id"]): (panel.get("panel_alias") or "")
+                for panel in panels
+            }
+    return {}
 
 
 def swap_rows(views: Dict[int, Dict[str, Any]]) -> None:
