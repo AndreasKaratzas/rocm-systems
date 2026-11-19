@@ -384,7 +384,10 @@ class cli_analysis(OmniAnalyze_Base):
         )
 
     def _mem_chart(
-        self, args: argparse.Namespace, arch_config: schema.ArchConfig
+        self,
+        args: argparse.Namespace,
+        workload: schema.Workload,
+        arch_config: schema.ArchConfig,
     ) -> Optional[Tuple[int, Dict[str, Any], List[int]]]:
         """(panel id, panel, table ids) of the memory chart the terminal draws, or
         None when it draws none."""
@@ -392,7 +395,7 @@ class cli_analysis(OmniAnalyze_Base):
             table_ids = tty.mem_chart_tables(
                 args, self._runs, panel_id, panel, self._profiling_config
             )
-            if table_ids:
+            if chart_values(workload.dfs, table_ids):
                 return panel_id, panel, table_ids
         return None
 
@@ -407,7 +410,7 @@ class cli_analysis(OmniAnalyze_Base):
         once for both."""
         gpu_arch = workload.sys_info.iloc[0]["gpu_arch"]
         roofline = self._roofline(args, workload_path, gpu_arch)
-        mem_chart = self._mem_chart(args, arch_config)
+        mem_chart = self._mem_chart(args, workload, arch_config)
         table_ids = list(ROOFLINE_TABLE_IDS) if roofline else []
         if mem_chart:
             table_ids += mem_chart[2]

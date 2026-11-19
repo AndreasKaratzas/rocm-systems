@@ -615,7 +615,7 @@
     window.HtmlReport.createKernelList({
       list: document.getElementById("mem-chart-kernel-list"),
       items: kernels.map(function (kernel, index) {
-        return { key: index, label: kernel.name, title: kernel.name };
+        return { key: index, label: kernel.label, title: kernel.name };
       }),
       mode: "single",
       showAllButton: document.getElementById("mem-chart-show-all"),
@@ -623,7 +623,7 @@
       onChange: function (keys) {
         var index = keys.size ? Array.from(keys)[0] : null;
         view = index === null ? model.views.aggregate : kernels[index].view;
-        selection.textContent = index === null ? "All kernels" : kernels[index].name;
+        selection.textContent = index === null ? "All kernels" : kernels[index].label;
         showView();
       },
     }).setCountText("(" + kernels.length + ")");

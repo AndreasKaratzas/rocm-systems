@@ -21,7 +21,7 @@ from memory_chart.units import (
     panel_descriptions,
     unit_of,
 )
-from utils.html_report.report_shell import build_page
+from utils.html_report.report_shell import build_page, truncate_kernel_name
 
 MODEL_ID = "mem-chart-model"
 _ASSETS_DIR = Path(__file__).parent / "assets"
@@ -126,7 +126,10 @@ def mem_chart_document(
         ],
         "views": {
             "aggregate": aggregate,
-            "kernels": [{"name": name, "view": view} for name, view in kernels],
+            "kernels": [
+                {"name": name, "label": truncate_kernel_name(name), "view": view}
+                for name, view in kernels
+            ],
         },
     }
     return build_page(
