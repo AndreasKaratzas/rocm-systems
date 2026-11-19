@@ -165,6 +165,11 @@ def transform_expression(
     return True
 
 
+# Eval strings of the valid equations translated so far. Analyze translates the
+# same formulas for every kernel and pass table, so each is parsed only once.
+_EVAL_STRINGS: dict[str, str] = {}
+
+
 def build_eval_string(equation: str) -> str:
     """
     Convert user defined equation string to eval executable string.
@@ -211,7 +216,10 @@ def build_eval_string(equation: str) -> str:
     if not equation:
         return ""
 
-    equation_string = str(equation)
+    key = str(equation)
+    if key in _EVAL_STRINGS:
+        return _EVAL_STRINGS[key]
+    equation_string = key
 
     # build-in variable starts with '$', python can not handle it.
     # replace '$' with 'ammolite__'.
@@ -222,13 +230,11 @@ def build_eval_string(equation: str) -> str:
     if not transform_expression(ast_node, equation):
         return ""
 
-    equation_string = ast.unparse(ast_node)
-
     # correct column name/label in df with [], such as TCC_HIT[0],
     # the target is df['TCC_HIT[0]']
-    equation_string = re.sub(r"\'\]\[(\d+)\]", r"[\g<1>]']", equation_string)
-
-    return equation_string
+    eval_string = re.sub(r"\'\]\[(\d+)\]", r"[\g<1>]']", ast.unparse(ast_node))
+    _EVAL_STRINGS[key] = eval_string
+    return eval_string
 
 
 def columns_read(eval_string: str, build_in_vars: dict[str, str]) -> set[str]:
