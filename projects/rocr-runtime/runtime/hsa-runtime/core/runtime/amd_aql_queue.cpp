@@ -329,6 +329,11 @@ AqlQueue::AqlQueue(core::SharedQueue* shared_queue, GpuAgent* agent, size_t req_
       throw AMD::hsa_exception(HSA_STATUS_ERROR_OUT_OF_RESOURCES,
                                "Queue event handler failed registration.\n");
     exceptionState = ERROR_HANDLER_DONE;
+
+    // This queue has no event and no ErrorReason, so a queue exception has no route to
+    // the application. Report it here rather than at agent init: a process that only
+    // enumerates agents never creates a queue and keeps a clean stderr.
+    agent_->WarnIfNoQueueExceptionRoute();
   }
 
   // Allocate IB for icache flushes.
