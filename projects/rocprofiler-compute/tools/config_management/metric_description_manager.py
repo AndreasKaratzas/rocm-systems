@@ -5,11 +5,12 @@
 """
 Metric description manager.
 Syncs the metric descriptions analyze shows (the analysis views and the metric library)
-to the per-arch description files and the documentation files.
+to one description file per arch, docs/data/metrics/<arch>_metrics.yaml. Each entry
+has the library text (plain), the text the docs show (rst) and the unit; an rst that
+differs from plain was edited by hand, and a sync keeps it.
 
-Run from the project root so default options resolve:
-  --per-arch-output (tools/per_arch_metric_definitions)
-  --docs-output-dir (docs/data/metrics)
+Run from the project root so the default --docs-output-dir (docs/data/metrics)
+resolves.
 
 Usage (paths relative to project root):
     SCRIPT=tools/config_management/metric_description_manager.py
@@ -17,8 +18,6 @@ Usage (paths relative to project root):
     python $SCRIPT --sync-arch <arch_name>
     python $SCRIPT --sync-all
     python $SCRIPT --validate <arch_name>
-    python $SCRIPT --generate-docs
-    python $SCRIPT --generate-docs --docs-arch gfx115x
 """
 
 from __future__ import annotations
@@ -456,16 +455,38 @@ def extract_descriptions_from_arch(arch_name: str) -> Dict[str, Dict[str, dict]]
     return descriptions_by_section
 
 
-def update_per_arch_metrics_file(
-    arch_name: str, descriptions: dict, output_dir: Union[str, Path]
+def with_docs_names(arch_name: str, descriptions: dict) -> dict:
+    """Return descriptions keyed by the section and metric names the docs use."""
+    docs_descriptions: Dict[str, Dict[str, dict]] = {}
+    for section, metrics in descriptions.items():
+        docs_section = docs_descriptions.setdefault(
+            normalize_docs_section_name(arch_name, section), {}
+        )
+        for metric_name, desc_data in metrics.items():
+            docs_metric_name = normalize_docs_metric_name(arch_name, metric_name)
+            if docs_metric_name in docs_section:
+                raise ValueError(
+                    f"{arch_name}: two metrics are {docs_metric_name!r} in the docs"
+                )
+            docs_section[docs_metric_name] = desc_data
+    return docs_descriptions
+
+
+def docs_file(arch_name: str, docs_dir: Union[str, Path]) -> Path:
+    """Return the path of an arch's metric description file."""
+    return Path(docs_dir) / f"{arch_name}_metrics.yaml"
+
+
+def update_docs_file(
+    arch_name: str, descriptions: dict, docs_dir: Union[str, Path]
 ) -> None:
-    """Write per-arch descriptions with plain, rst, and unit fields."""
-    output_path = Path(output_dir) / f"{arch_name}_metrics_description.yaml"
+    """Write an arch's description file with plain, rst, and unit fields."""
+    output_path = docs_file(arch_name, docs_dir)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    per_arch_descriptions: dict[str, dict[str, dict]] = {}
+    docs_descriptions: dict[str, dict[str, dict]] = {}
     for section, metrics in descriptions.items():
-        per_arch_descriptions[section] = {}
+        docs_descriptions[section] = {}
         for metric_name, desc_data in metrics.items():
             entry = {
                 "plain": format_yaml_scalar(desc_data.get("plain", "")),
@@ -473,43 +494,43 @@ def update_per_arch_metrics_file(
             }
             if "unit" in desc_data:
                 entry["unit"] = desc_data["unit"]
-            per_arch_descriptions[section][metric_name] = entry
+            docs_descriptions[section][metric_name] = entry
 
-    cm_utils.save_yaml(per_arch_descriptions, output_path)
+    cm_utils.save_yaml(docs_descriptions, output_path)
     print(f"Updated: {output_path}")
 
 
-def load_existing_per_arch(arch_name: str, per_arch_dir: Union[str, Path]) -> dict:
-    """Load existing per-arch YAML if it exists."""
-    per_arch_file = Path(per_arch_dir) / f"{arch_name}_metrics_description.yaml"
-    if per_arch_file.exists():
-        with open(per_arch_file, encoding="utf-8") as f:
+def load_docs_file(arch_name: str, docs_dir: Union[str, Path]) -> dict:
+    """Load an arch's description file if it exists."""
+    path = docs_file(arch_name, docs_dir)
+    if path.exists():
+        with open(path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     return {}
 
 
-def preserve_manual_rst_edits(new_descriptions: dict, existing_per_arch: dict) -> dict:
+def preserve_manual_rst_edits(new_descriptions: dict, existing: dict) -> dict:
     """
-    Preserve manually edited RST and existing metrics from per-arch YAMLs.
+    Preserve manually edited RST and existing metrics from the description file.
 
     Rules:
     1. If existing rst != plain, it was manually edited -> preserve it
-    2. If a metric exists in per-arch but not extracted from panels -> preserve it
+    2. If a metric exists in the file but not extracted from panels -> preserve it
        (This handles metrics defined in panel tables but lacking descriptions)
     """
-    if not existing_per_arch:
+    if not existing:
         return new_descriptions  # No existing file, nothing to preserve
 
     # First pass: Preserve manual RST edits for metrics extracted from panels
     for section, metrics in new_descriptions.items():
-        if section not in existing_per_arch:
+        if section not in existing:
             continue
 
         for metric_name, new_data in metrics.items():
-            if metric_name not in existing_per_arch[section]:
+            if metric_name not in existing[section]:
                 continue
 
-            existing_data = existing_per_arch[section][metric_name]
+            existing_data = existing[section][metric_name]
             existing_rst = existing_data.get("rst", "")
             existing_plain = existing_data.get("plain", "")
 
@@ -520,11 +541,11 @@ def preserve_manual_rst_edits(new_descriptions: dict, existing_per_arch: dict) -
 
             # Otherwise, use new auto-generated RST (plain->rst conversion)
 
-    # Second pass: Preserve metrics that exist in per-arch but not extracted
+    # Second pass: Preserve metrics that exist in the file but not extracted
     # from panels (e.g., metrics defined in panel tables but lacking
     # descriptions in metrics_description)
     preserved_count = 0
-    for section, existing_metrics in existing_per_arch.items():
+    for section, existing_metrics in existing.items():
         if section not in new_descriptions:
             # Entire section missing from panel extraction - preserve it
             new_descriptions[section] = existing_metrics
@@ -533,80 +554,18 @@ def preserve_manual_rst_edits(new_descriptions: dict, existing_per_arch: dict) -
             # Check for individual metrics missing from panel extraction
             for metric_name, existing_data in existing_metrics.items():
                 if metric_name not in new_descriptions[section]:
-                    # Metric exists in per-arch but not in panel extraction
+                    # Metric exists in the file but not in panel extraction
                     # preserve it
                     new_descriptions[section][metric_name] = existing_data
                     preserved_count += 1
 
     if preserved_count > 0:
         print(
-            f"  Preserved {preserved_count} metrics from per-arch YAML "
+            f"  Preserved {preserved_count} metrics from the description file "
             "(not in panel descriptions)"
         )
 
     return new_descriptions
-
-
-def resolved_docs_target_archs(per_arch_dir: Union[str, Path]) -> list[str]:
-    """Doc emit list: the arch of every per-arch YAML on disk."""
-    suffix = "_metrics_description.yaml"
-    return sorted(
-        path.name.removesuffix(suffix) for path in Path(per_arch_dir).glob(f"*{suffix}")
-    )
-
-
-def generate_docs_from_per_arch(
-    per_arch_dir: Union[str, Path],
-    docs_output_dir: Union[str, Path],
-    target_archs: list[str] | None = None,
-) -> bool:
-    """
-    Generate per-arch documentation YAMLs from per-arch metric definitions.
-
-    IMPORTANT: Generated docs YAMLs contain ONLY RST field (no plain text).
-    These are derived artifacts for documentation - do not manually edit.
-
-    Simple transformation:
-    - Read per-arch YAML (has 'plain' and 'rst' fields)
-    - Write docs YAML (only 'rst' and 'unit' fields)
-    """
-    if target_archs is None:
-        target_archs = resolved_docs_target_archs(per_arch_dir)
-
-    docs_output_dir = Path(docs_output_dir)
-    docs_output_dir.mkdir(parents=True, exist_ok=True)
-
-    for arch in target_archs:
-        src_file = Path(per_arch_dir) / f"{arch}_metrics_description.yaml"
-        dst_file = docs_output_dir / f"{arch}_metrics.yaml"
-
-        if not src_file.exists():
-            print(f"Warning: {src_file} not found, skipping")
-            continue
-
-        # Load per-arch YAML
-        with open(src_file, encoding="utf-8") as f:
-            per_arch_data = yaml.safe_load(f)
-
-        # Transform: Keep only RST and unit fields for documentation
-        docs_data = {}
-        for section, metrics in per_arch_data.items():
-            docs_section = normalize_docs_section_name(arch, section)
-            docs_data[docs_section] = {}
-            for metric_name, metric_info in metrics.items():
-                docs_metric_name = normalize_docs_metric_name(arch, metric_name)
-                # Extract only RST and unit (drop 'plain' text)
-                entry = {}
-                if "rst" in metric_info:
-                    entry["rst"] = format_yaml_scalar(metric_info["rst"])
-                if "unit" in metric_info:
-                    entry["unit"] = metric_info["unit"]
-                docs_data[docs_section][docs_metric_name] = entry
-
-        cm_utils.save_yaml(docs_data, dst_file)
-        print(f"Generated: {dst_file}")
-
-    return True
 
 
 def validate_descriptions(arch_name: str) -> Tuple[bool, List[str], List[str]]:
@@ -646,7 +605,7 @@ def validate_descriptions(arch_name: str) -> Tuple[bool, List[str], List[str]]:
     return len(errors) == 0, warnings, errors
 
 
-def sync_arch(arch_name: str, per_arch_metrics_dir: str) -> bool:
+def sync_arch(arch_name: str, docs_dir: str) -> bool:
     """Sync descriptions for a single architecture with RST preservation."""
     if not has_views(arch_name):
         print(f"Error: no analysis views for {arch_name}")
@@ -656,19 +615,19 @@ def sync_arch(arch_name: str, per_arch_metrics_dir: str) -> bool:
     is_valid, warnings, errors = validate_descriptions(arch_name)
 
     # 1) Extract the panels' descriptions (plain text, auto-convert to RST)
-    descriptions = extract_descriptions_from_arch(arch_name)
+    descriptions = with_docs_names(arch_name, extract_descriptions_from_arch(arch_name))
     if not descriptions:
         print(f"No descriptions found in {arch_name}")
         return True
 
-    # 2) Load existing per-arch YAML (if exists) to preserve manual RST edits
-    existing_per_arch = load_existing_per_arch(arch_name, per_arch_metrics_dir)
+    # 2) Load the existing description file (if any) to preserve manual RST edits
+    existing = load_docs_file(arch_name, docs_dir)
 
     # 3) Preserve manual RST edits (if rst != plain, keep existing RST)
-    descriptions = preserve_manual_rst_edits(descriptions, existing_per_arch)
+    descriptions = preserve_manual_rst_edits(descriptions, existing)
 
-    # 4) Write per-arch file (with preserved manual RST edits)
-    update_per_arch_metrics_file(arch_name, descriptions, per_arch_metrics_dir)
+    # 4) Write the description file (with preserved manual RST edits)
+    update_docs_file(arch_name, descriptions, docs_dir)
 
     return True
 
@@ -691,63 +650,20 @@ def main() -> int:
         help="Validate descriptions for a single architecture",
     )
     parser.add_argument(
-        "--generate-docs",
-        action="store_true",
-        help="Generate per-arch docs YAMLs from per-arch definitions",
-    )
-    parser.add_argument(
-        "--docs-arch",
-        action="append",
-        metavar="ARCH",
-        dest="docs_archs",
-        help=(
-            "Restrict --generate-docs to one or more architectures "
-            "(repeatable). Defaults to every per-arch description file."
-        ),
-    )
-    parser.add_argument(
-        "--per-arch-output",
-        default="tools/per_arch_metric_definitions",
-        help="Output directory for the per-arch description YAMLs",
-    )
-    parser.add_argument(
         "--docs-output-dir",
         default="docs/data/metrics",
-        help="Output directory for the generated docs YAMLs",
+        help="Directory of the metric description YAMLs",
     )
 
     args = parser.parse_args()
 
-    if args.docs_archs and not args.generate_docs:
-        print("Error: --docs-arch requires --generate-docs")
-        return 1
-
-    if args.generate_docs:
-        available_archs = set(resolved_docs_target_archs(args.per_arch_output))
-        if args.docs_archs:
-            unknown = sorted(set(args.docs_archs) - available_archs)
-            if unknown:
-                print(
-                    "Error: --docs-arch values are not in the docs target set "
-                    f"(available: {', '.join(sorted(available_archs))}): "
-                    f"{', '.join(unknown)}"
-                )
-                return 1
-            target_archs = args.docs_archs
-        else:
-            target_archs = None
-        ok = generate_docs_from_per_arch(
-            args.per_arch_output, args.docs_output_dir, target_archs
-        )
-        return 0 if ok else 1
-
     if args.sync_arch:
-        ok = sync_arch(args.sync_arch, args.per_arch_output)
+        ok = sync_arch(args.sync_arch, args.docs_output_dir)
         return 0 if ok else 1
 
     if args.sync_all:
         for arch in sorted(METRIC_LIBRARY_PARENT_ARCH):
-            if not sync_arch(arch, args.per_arch_output):
+            if not sync_arch(arch, args.docs_output_dir):
                 return 1
         return 0
 
