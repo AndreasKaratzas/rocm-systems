@@ -5,7 +5,7 @@ import argparse
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import pandas as pd
 
@@ -607,6 +607,59 @@ def load_table_data(
         args.debug_metric_expression,
         [table.loc[filtered_pmc.index] for table in workload.pass_tables.values()],
     )
+
+
+def kernel_ids(workload: schema.Workload) -> List[int]:
+    """Top-kernel row ids to show one by one: the -k ids, else every top kernel."""
+    if workload.filter_kernel_ids:
+        return workload.filter_kernel_ids
+    if PMC_KERNEL_TOP_TABLE_ID not in workload.dfs:
+        return []
+    return workload.dfs[PMC_KERNEL_TOP_TABLE_ID].index.tolist()
+
+
+def evaluate_kernel_tables(
+    arch_config: schema.ArchConfig,
+    workload: schema.Workload,
+    pmc_df: pd.DataFrame,
+    table_ids: Sequence[int],
+) -> Dict[int, Dict[int, pd.DataFrame]]:
+    """Evaluate the arch-config tables *table_ids* on each kernel's rows of *pmc_df*.
+
+    Returns each kernel's tables by top-kernel row id, in kernel_ids order; a kernel
+    with no rows in pmc_df is left out. Rows are grouped by kernel once, and each
+    kernel is evaluated in one call, so the built-in variables are computed once per
+    kernel whatever tables are asked for.
+    """
+    top_df = workload.dfs.get(PMC_KERNEL_TOP_TABLE_ID)
+    if top_df is None:
+        return {}
+    rows_by_kernel = pmc_df.groupby("Kernel_Name", sort=False).indices
+    tables = [table_id for table_id in table_ids if table_id in arch_config.dfs]
+    evaluated: Dict[int, Dict[int, pd.DataFrame]] = {}
+    for kernel_id in kernel_ids(workload):
+        if kernel_id not in top_df.index:
+            continue
+        rows = rows_by_kernel.get(top_df.loc[kernel_id, "Kernel_Name"])
+        if rows is None:
+            continue
+        kernel_pmc_df = pmc_df.iloc[rows]
+        kernel_dfs = {table_id: arch_config.dfs[table_id].copy() for table_id in tables}
+        eval_metric(
+            kernel_dfs,
+            {table_id: arch_config.dfs_type[table_id] for table_id in tables},
+            arch_config.dfs_expressions,
+            workload.sys_info.iloc[0],
+            workload.roofline_peaks,
+            kernel_pmc_df,
+            debug=False,
+            pass_tables=[
+                table.loc[kernel_pmc_df.index]
+                for table in workload.pass_tables.values()
+            ],
+        )
+        evaluated[kernel_id] = kernel_dfs
+    return evaluated
 
 
 def build_comparable_columns(time_unit: str) -> list[str]:
