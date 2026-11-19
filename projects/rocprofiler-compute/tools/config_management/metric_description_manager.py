@@ -4,7 +4,8 @@
 
 """
 Metric description manager.
-Syncs metric descriptions between config YAMLs and documentation files.
+Syncs the metric descriptions analyze shows (the analysis views and the metric library)
+to the per-arch description files and the documentation files.
 
 Run from the project root so default options resolve:
   --per-arch-output (tools/per_arch_metric_definitions)
@@ -12,11 +13,10 @@ Run from the project root so default options resolve:
 
 Usage (paths relative to project root):
     SCRIPT=tools/config_management/metric_description_manager.py
-    CONFIGS=src/rocprof_compute_soc/analysis_configs
 
-    python $SCRIPT --sync-arch <arch_name> $CONFIGS
-    python $SCRIPT --sync-all $CONFIGS
-    python $SCRIPT --validate <arch_name> $CONFIGS
+    python $SCRIPT --sync-arch <arch_name>
+    python $SCRIPT --sync-all
+    python $SCRIPT --validate <arch_name>
     python $SCRIPT --generate-docs
     python $SCRIPT --generate-docs --docs-arch gfx115x
 """
@@ -27,15 +27,19 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import Union
+from typing import Dict, List, Tuple, Union
 
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT.parent / "src"))
 
 from config_management import utils_ruamel as cm_utils
+
+from rocprof_compute_soc.metric_library.loader import METRIC_LIBRARY_PARENT_ARCH
+from utils.analysis_views import arch_panel_configs, has_views
 
 # gfx1250 metric_table ids -> documentation section names (disambiguated
 # where multiple panels reuse generic titles like "Utilization").
@@ -111,15 +115,15 @@ GFX1250_PANEL_ID_TO_SECTION: dict[int, str] = {
     1204: "GLARBC Request Bandwidth",
     1205: "GLARBC-GL2 Interface",
     1301: "GL2A Processing",
-    1310: "GL2C Utilization",
-    1311: "GL2C Cache Lookup",
-    1302: "GL2C-EA Stalls",
-    1303: "GL2C-EA Interface - Latencies",
-    1304: "GL2C-EA Interface - HBM Bandwidth",
-    1305: "GL2C-EA Interface - Host CPU Bandwidth",
-    1306: "GL2C-EA Interface - PCIe Bandwidth",
-    1307: "GL2C-EA Interface - Remote Node Bandwidth",
-    1308: "GL2C-EA Interface - Remote Memory Bandwidth (Same Node)",
+    1302: "GL2C Utilization",
+    1303: "GL2C Cache Lookup",
+    1304: "GL2C-EA Stalls",
+    1305: "GL2C-EA Interface - Latencies",
+    1306: "GL2C-EA Interface - HBM Bandwidth",
+    1307: "GL2C-EA Interface - Host CPU Bandwidth",
+    1308: "GL2C-EA Interface - PCIe Bandwidth",
+    1309: "GL2C-EA Interface - Remote Node Bandwidth",
+    1310: "GL2C-EA Interface - Remote Memory Bandwidth (Same Node)",
     1401: "EA Utilization",
     1402: "EA Traffic Bandwidth",
     1403: "EA-SDP Interface - Outstanding Requests",
@@ -140,12 +144,12 @@ GFX1201_PANEL_ID_TO_SECTION: dict[int, str] = {
     302: "Memory chart - Scalar Data Cache",
     303: "Memory chart - GL0 Cache (Vector L0)",
     304: "Memory chart - LDS (Local Data Share)",
-    308: "Memory chart - GL2 Cache (L2)",
-    309: "Memory chart - L2 to Memory",
-    310: "Memory chart - Workgroup Processors (WGPs)",
+    305: "Memory chart - GL2 Cache (L2)",
+    306: "Memory chart - L2 to Memory",
+    307: "Memory chart - Workgroup Processors (WGPs)",
     401: "Roofline Performance Rates",
     402: "Roofline Plot Points",
-    602: "Wave Dispatch Statistics",
+    601: "Wave Dispatch Statistics",
     701: "WGP Utilization",
     702: "WGP Wavefront Launch Stats",
     703: "WGP Wavefront Dispatch",
@@ -154,15 +158,15 @@ GFX1201_PANEL_ID_TO_SECTION: dict[int, str] = {
     706: "WGP VMEM Instruction Mix",
     707: "WGP LDS Instruction Mix",
     708: "WGP VALU Instruction Mix",
-    710: "WGP WMMA Instruction FLOPs and IOPs Counting",
-    716: "WGP Instruction Cache",
-    717: "WGP Scalar Data Cache",
-    902: "GL0 Request Statistics",
-    903: "GL0 Cache Performance",
-    908: "GL0 Stalls",
-    1103: "GL1 Cache Request Statistics",
-    1310: "GL2 Cache Request Statistics",
-    1311: "GL2 Cache Performance",
+    709: "WGP WMMA Instruction FLOPs and IOPs Counting",
+    710: "WGP Instruction Cache",
+    711: "WGP Scalar Data Cache",
+    901: "GL0 Request Statistics",
+    902: "GL0 Cache Performance",
+    903: "GL0 Stalls",
+    1101: "GL1 Cache Request Statistics",
+    1301: "GL2 Cache Request Statistics",
+    1302: "GL2 Cache Performance",
     1701: "GRBM Metrics",
 }
 
@@ -232,16 +236,15 @@ RDNA35_PANEL_ID_TO_SECTION_BY_ARCH: dict[int, str] = {
     505: "MEC Instruction Cache",
     601: "SPI Utilization",
     602: "Wave Dispatch Statistics",
-    701: "WGP Utilization",
-    702: "Wavefront Launch Stats",
-    703: "Wave Dispatch",
-    704: "Wave Life",
-    705: "Wave Instruction Mix",
-    706: "VMEM Instruction Mix",
-    707: "LDS Instruction Mix",
-    709: "Wait State Analysis",
-    710: "WGP Instruction Cache",
-    711: "WGP Scalar Data Cache",
+    701: "Wavefront Launch Stats",
+    702: "Wave Dispatch",
+    703: "Wave Life",
+    704: "Wave Instruction Mix",
+    705: "VMEM Instruction Mix",
+    706: "LDS Instruction Mix",
+    707: "Wait State Analysis",
+    708: "WGP Instruction Cache",
+    709: "WGP Scalar Data Cache",
     901: "GL0 Utilization",
     902: "GL0 Request Statistics",
     903: "GL0 Cache Performance",
@@ -257,8 +260,8 @@ RDNA35_PANEL_ID_TO_SECTION_BY_ARCH: dict[int, str] = {
     1303: "GL2 Cache Bandwidth",
     1401: "DRAM Read Interface",
     1402: "DRAM Write Interface",
-    1404: "System Arbiter (SARB)",
-    1405: "Return Interface",
+    1403: "System Arbiter (SARB)",
+    1404: "Return Interface",
     1701: "GPU Utilization",
     1702: "Shader Engine Utilization",
 }
@@ -377,24 +380,14 @@ def validate_rst_syntax(text: str) -> tuple[bool, str]:
     return True, ""
 
 
-def extract_descriptions_from_arch(
-    arch_dir: Union[str, Path],
-) -> dict[str, dict[str, dict]]:
+def extract_descriptions_from_arch(arch_name: str) -> Dict[str, Dict[str, dict]]:
     """
-    Extract metric descriptions from all config YAMLs in an arch.
+    Extract the metric descriptions of an arch's panels.
     Returns dict organized by section name.
     """
-    arch_path = Path(arch_dir)
-    arch_name = arch_path.name
     descriptions_by_section: dict[str, dict[str, dict]] = {}
 
-    for yaml_file in sorted(arch_path.glob("*.yaml")):
-        data = cm_utils.load_yaml(yaml_file)
-
-        panel_config = data.get("Panel Config")
-        if not isinstance(panel_config, dict):
-            continue
-
+    for panel_config in arch_panel_configs(arch_name).values():
         panel_descriptions: dict = panel_config.get("metrics_description", {})
 
         metrics_with_units: dict[str, dict[str, str]] = {}
@@ -616,22 +609,13 @@ def generate_docs_from_per_arch(
     return True
 
 
-def validate_descriptions(
-    arch_dir: Union[str, Path],
-) -> tuple[bool, list[str], list[str]]:
+def validate_descriptions(arch_name: str) -> Tuple[bool, List[str], List[str]]:
     """Validate: missing descriptions and basic RST syntax."""
-    arch_path = Path(arch_dir)
     warnings: list[str] = []
     errors: list[str] = []
 
-    for yaml_file in sorted(arch_path.glob("*.yaml")):
-        with open(yaml_file) as f:
-            data = yaml.safe_load(f) or {}
-
-        panel_config = data.get("Panel Config")
-        if not isinstance(panel_config, dict):
-            continue
-
+    for panel_id, panel_config in arch_panel_configs(arch_name).items():
+        panel = f"Panel {panel_id} ({panel_config['title']})"
         panel_descriptions: dict = panel_config.get("metrics_description", {})
         all_metrics: set[str] = set()
 
@@ -646,8 +630,7 @@ def validate_descriptions(
         missing = sorted(all_metrics - set(panel_descriptions.keys()))
         if missing:
             warnings.append(
-                f"{yaml_file.name}: Missing descriptions "
-                f"for metrics: {', '.join(missing)}"
+                f"{panel}: Missing descriptions for metrics: {', '.join(missing)}"
             )
 
         for metric_name, description in panel_descriptions.items():
@@ -658,30 +641,22 @@ def validate_descriptions(
             )
             ok, err = validate_rst_syntax(rst_text)
             if not ok:
-                errors.append(
-                    f"{yaml_file.name}: Metric '{metric_name}' has invalid RST: {err}"
-                )
+                errors.append(f"{panel}: Metric '{metric_name}' has invalid RST: {err}")
 
     return len(errors) == 0, warnings, errors
 
 
-def sync_arch(
-    arch_name: str,
-    configs_dir: str,
-    per_arch_metrics_dir: str,
-) -> bool:
+def sync_arch(arch_name: str, per_arch_metrics_dir: str) -> bool:
     """Sync descriptions for a single architecture with RST preservation."""
-    arch_dir = Path(configs_dir) / arch_name
-
-    if not arch_dir.is_dir():
-        print(f"Error: {arch_dir} is not a directory")
+    if not has_views(arch_name):
+        print(f"Error: no analysis views for {arch_name}")
         return False
 
     print(f"Syncing descriptions for {arch_name}...")
-    is_valid, warnings, errors = validate_descriptions(arch_dir)
+    is_valid, warnings, errors = validate_descriptions(arch_name)
 
-    # 1) Extract descriptions from panel YAMLs (plain text, auto-convert to RST)
-    descriptions = extract_descriptions_from_arch(arch_dir)
+    # 1) Extract the panels' descriptions (plain text, auto-convert to RST)
+    descriptions = extract_descriptions_from_arch(arch_name)
     if not descriptions:
         print(f"No descriptions found in {arch_name}")
         return True
@@ -731,9 +706,6 @@ def main() -> int:
         ),
     )
     parser.add_argument(
-        "configs_dir", nargs="?", help="Path to the analysis_configs directory"
-    )
-    parser.add_argument(
         "--per-arch-output",
         default="tools/per_arch_metric_definitions",
         help="Output directory for the per-arch description YAMLs",
@@ -770,46 +742,21 @@ def main() -> int:
         return 0 if ok else 1
 
     if args.sync_arch:
-        if not args.configs_dir:
-            print("Error: configs_dir is required for --sync-arch")
-            return 1
-        ok = sync_arch(
-            args.sync_arch,
-            args.configs_dir,
-            args.per_arch_output,
-        )
+        ok = sync_arch(args.sync_arch, args.per_arch_output)
         return 0 if ok else 1
 
     if args.sync_all:
-        if not args.configs_dir:
-            print("Error: configs_dir is required for --sync-all")
-            return 1
-        configs_path = Path(args.configs_dir)
-        archs = sorted([
-            d.name
-            for d in configs_path.iterdir()
-            if d.is_dir() and d.name.startswith("gfx")
-        ])
-        if not archs:
-            print("No architecture directories found")
-            return 1
-        for arch in archs:
-            ok = sync_arch(
-                arch,
-                args.configs_dir,
-                args.per_arch_output,
-            )
-            if not ok:
+        for arch in sorted(METRIC_LIBRARY_PARENT_ARCH):
+            if not sync_arch(arch, args.per_arch_output):
                 return 1
         return 0
 
     if args.validate:
-        arch_dir = Path(args.configs_dir) / args.validate
-        if not arch_dir.is_dir():
-            print(f"Error: {arch_dir} is not a directory")
+        if not has_views(args.validate):
+            print(f"Error: no analysis views for {args.validate}")
             return 1
 
-        is_valid, warnings, errors = validate_descriptions(arch_dir)
+        is_valid, warnings, errors = validate_descriptions(args.validate)
         print(f"Validation results for {args.validate}:\n{'=' * 80}")
 
         if warnings:
