@@ -626,11 +626,10 @@ add_test(
 )
 
 add_test(
-    NAME test_memory_chart_html_report
+    NAME test_memory_chart_html
     COMMAND
-        ${PYTHON_TEST_COMMAND} -m pytest
-        --junitxml=tests/test_memory_chart_html_report.xml ${COV_OPTION}
-        tests/unit/memory_chart/test_html_report.py ${WORKING_DIR_OPTION}
+        ${PYTHON_TEST_COMMAND} -m pytest --junitxml=tests/test_memory_chart_html.xml
+        ${COV_OPTION} tests/unit/memory_chart/test_mem_chart_html.py ${WORKING_DIR_OPTION}
 )
 
 add_test(
@@ -1257,7 +1256,7 @@ if(${ENABLE_COVERAGE})
         test_memory_chart_loader
         test_memory_chart_units
         test_memory_chart_render
-        test_memory_chart_html_report
+        test_memory_chart_html
         test_membw_engine
         test_membw_summary
         test_membw_guidance

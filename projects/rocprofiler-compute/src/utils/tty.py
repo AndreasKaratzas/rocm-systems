@@ -7,7 +7,7 @@ import math
 import shutil
 import textwrap
 from io import StringIO
-from typing import Any, Container, Optional, TextIO
+from typing import Any, Container, List, Optional, TextIO
 
 import pandas as pd
 from rich.console import Console as RichConsole
@@ -19,7 +19,7 @@ from tabulate import tabulate
 import config
 from membw_analysis.models import MemBwAnalysisResult
 from membw_analysis.summary import status_line
-from memory_chart.loader import Layouts, is_memory_chart_panel
+from memory_chart.loader import Layouts, chart_values, is_memory_chart_panel
 from memory_chart.render import format_mem_chart_heading, plot_mem_chart
 from memory_chart.units import panel_units
 from utils import parser, schema
@@ -935,41 +935,33 @@ def _draws_mem_chart(
     )
 
 
-def mem_chart_values(
+def mem_chart_tables(
     args: argparse.Namespace,
     runs: dict[str, Any],
     panel_id: int,
     panel: dict[str, Any],
     profiling_config: dict[str, Any],
-) -> dict[str, Any]:
-    """Metric id -> value of the memory chart that show_all draws for a panel.
+) -> List[int]:
+    """Ids of the tables of a panel that show_all draws as the memory chart.
 
-    Values are as evaluated, not rounded to --decimal: the chart rounds each one
-    once, for display. Empty when the panel draws no chart.
+    Empty when the panel draws no chart.
     """
     gpu_arch = _gpu_arch(runs)
     if not _draws_mem_chart(args, runs, gpu_arch):
-        return {}
+        return []
     filter_panel_ids = convert_filter_blocks_to_panel_ids(
         profiling_config.get("filter_blocks", []), gpu_arch
     )
-    first_run = next(iter(runs.values()))
-    values: dict[str, Any] = {}
-    for data_source in panel["data source"]:
-        for table_config in data_source.values():
-            if (
-                table_config.get("cli_style") != "mem_chart"
-                or not _table_in_every_run(runs, table_config)
-                or _hidden_by_profiling_filter(
-                    args, panel_id, table_config, filter_panel_ids
-                )
-            ):
-                continue
-            # Metric tables are indexed by Metric_ID
-            table_df = first_run.dfs[table_config["id"]]
-            if table_df.index.name == "Metric_ID" and "Value" in table_df:
-                values.update(zip(table_df.index, table_df["Value"]))
-    return values
+    return [
+        table_config["id"]
+        for data_source in panel["data source"]
+        for table_config in data_source.values()
+        if table_config.get("cli_style") == "mem_chart"
+        and _table_in_every_run(runs, table_config)
+        and not _hidden_by_profiling_filter(
+            args, panel_id, table_config, filter_panel_ids
+        )
+    ]
 
 
 def show_all(
@@ -1103,7 +1095,10 @@ def show_all(
                 )
 
         # Emit the merged memory chart for the panel.
-        mem_chart_data = mem_chart_values(args, runs, panel_id, panel, profiling_config)
+        mem_chart_data = chart_values(
+            first_run.dfs,
+            mem_chart_tables(args, runs, panel_id, panel, profiling_config),
+        )
         if mem_chart_data:
             heading = format_mem_chart_heading(args.normal_unit, panel_id=panel_id)
             membw_result = getattr(first_run, "membw_result", None)
@@ -1120,9 +1115,9 @@ def show_all(
                     membw_result,
                     chart_width=_max_line_width(chart_output),
                 )
-            html_path = getattr(first_run, "mem_chart_html_path", None)
-            if html_path:
-                panel_content += f"\nInteractive memory chart saved to {html_path}\n"
+            panel_content += saved_report_text(
+                runs, "mem_chart_html_path", "memory chart"
+            )
 
         # Roofline printing is handled separately above in is_roofline_shown.
         # With --debug-table-view, roofline tables (401/402) render as normal tables.

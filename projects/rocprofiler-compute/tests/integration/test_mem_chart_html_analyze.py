@@ -3,7 +3,6 @@
 
 """analyze writes the memory chart it prints as an HTML page."""
 
-import json
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -13,6 +12,7 @@ import pandas as pd
 import pytest
 
 from memory_chart.loader import Layouts
+from memory_chart.mem_chart_html import MODEL_ID
 from tests.integration import common as integration_common
 from utils.utils_common import strip_ansi
 
@@ -25,13 +25,7 @@ VCOPY_WORKLOADS = sorted(
 
 def embedded_model(page: Path) -> dict:
     """The JSON model of a memory chart page."""
-    match = re.search(
-        r'<script id="mem-chart-model" type="application/json">(.*?)</script>',
-        page.read_text(encoding="utf-8"),
-        re.DOTALL,
-    )
-    assert match is not None
-    return json.loads(match.group(1))
+    return common.embedded_model(page.read_text(encoding="utf-8"), MODEL_ID)
 
 
 def pages(workload_dir: str) -> list:

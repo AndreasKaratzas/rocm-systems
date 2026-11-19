@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from memory_chart import mem_chart_html
 from roofline import roofline_html
 from utils.html_report import report_shell
 from utils.html_report.report_shell import (
@@ -21,7 +22,10 @@ from utils.html_report.report_shell import (
 
 _ASSETS = Path(report_shell.__file__).parent / "assets"
 # Each report page: its assets directory and the stem of its .html/.css/.js
-PAGES = {"roofline": (Path(roofline_html.__file__).parent / "assets", "roofline_plot")}
+PAGES = {
+    "memory_chart": (Path(mem_chart_html.__file__).parent / "assets", "mem_chart"),
+    "roofline": (Path(roofline_html.__file__).parent / "assets", "roofline_plot"),
+}
 
 
 def test_build_document_places_fragments_in_one_shell() -> None:

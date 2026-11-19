@@ -12,7 +12,9 @@ from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, NoReturn, Optional, Tuple
+from typing import Any, Dict, List, NoReturn, Optional, Tuple
+
+import pandas as pd
 
 import config
 from membw_analysis.models import BOTTLENECK_LEVELS
@@ -205,6 +207,21 @@ def is_memory_chart_panel(panel: dict[str, Any]) -> bool:
         for source in sources
         for table in source.values()
     )
+
+
+def chart_values(dfs: Dict[int, pd.DataFrame], table_ids: List[int]) -> Dict[str, Any]:
+    """Metric id -> value of the memory chart tables *table_ids* in *dfs*.
+
+    Values are as evaluated, not rounded to --decimal: the chart rounds each one
+    once, for display.
+    """
+    values: Dict[str, Any] = {}
+    for table_id in table_ids:
+        # Metric tables are indexed by Metric_ID
+        table_df = dfs[table_id]
+        if table_df.index.name == "Metric_ID" and "Value" in table_df:
+            values.update(zip(table_df.index, table_df["Value"]))
+    return values
 
 
 def layout_files() -> list[Path]:

@@ -21,7 +21,7 @@ from memory_chart.units import (
     panel_descriptions,
     unit_of,
 )
-from utils.html_report.report_shell import build_document, read_asset, report_file_name
+from utils.html_report.report_shell import build_page
 
 MODEL_ID = "mem-chart-model"
 _ASSETS_DIR = Path(__file__).parent / "assets"
@@ -121,24 +121,6 @@ def mem_chart_document(
         ],
         "views": {"aggregate": aggregate},
     }
-    return build_document(
-        title=heading,
-        body_html=read_asset(_ASSETS_DIR, "mem_chart.html"),
-        page_css=read_asset(_ASSETS_DIR, "mem_chart.css"),
-        page_js=read_asset(_ASSETS_DIR, "mem_chart.js"),
-        model_id=MODEL_ID,
-        model=model,
+    return build_page(
+        _ASSETS_DIR, "mem_chart", title=heading, model_id=MODEL_ID, model=model
     )
-
-
-def save_mem_chart_html(
-    workload_dir: str,
-    device_id: int,
-    gpu_kernel: Optional[List[Any]],
-    document: str,
-) -> str:
-    """Write the page next to the roofline report, named like it, and return its
-    path."""
-    path = f"{workload_dir}/{report_file_name('mem_chart', device_id, gpu_kernel)}"
-    Path(path).write_text(document, encoding="utf-8")
-    return path

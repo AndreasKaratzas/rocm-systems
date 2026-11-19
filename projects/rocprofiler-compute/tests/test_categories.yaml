@@ -59,7 +59,7 @@ test_categories:
       - test_memory_chart_loader
       - test_memory_chart_units
       - test_memory_chart_render
-      - test_memory_chart_html_report
+      - test_memory_chart_html
       - test_membw_engine
       - test_membw_summary
       - test_membw_guidance
@@ -181,7 +181,7 @@ test_categories:
       - test_memory_chart_loader
       - test_memory_chart_units
       - test_memory_chart_render
-      - test_memory_chart_html_report
+      - test_memory_chart_html
       - test_membw_engine
       - test_membw_summary
       - test_membw_guidance
@@ -317,7 +317,7 @@ test_categories:
       - test_memory_chart_loader
       - test_memory_chart_units
       - test_memory_chart_render
-      - test_memory_chart_html_report
+      - test_memory_chart_html
       - test_membw_engine
       - test_membw_summary
       - test_membw_guidance
@@ -453,7 +453,7 @@ test_categories:
       - test_memory_chart_loader
       - test_memory_chart_units
       - test_memory_chart_render
-      - test_memory_chart_html_report
+      - test_memory_chart_html
       - test_membw_engine
       - test_membw_summary
       - test_membw_guidance

@@ -9,16 +9,14 @@ from typing import Dict, List, Tuple
 import pandas as pd
 
 from membw_analysis.engine import run_membw_analysis
-from memory_chart.html_report import (
-    chart_view,
-    mem_chart_document,
-    save_mem_chart_html,
-)
+from memory_chart.loader import chart_values
+from memory_chart.mem_chart_html import chart_view, mem_chart_document
 from memory_chart.render import format_mem_chart_heading
 from memory_chart.units import panel_units
 from rocprof_compute_analyze.analysis_base import OmniAnalyze_Base
 from roofline.roofline_main import ROOFLINE_SUPPORTED, Roofline
 from utils import file_io, parser, schema, tty
+from utils.html_report.report_shell import write_report
 from utils.logger import console_error, console_log, console_warning, demarcate
 from utils.mi_gpu_spec import mi_gpu_specs
 from utils.roofline_calc import ROOFLINE_TABLE_IDS, calc_ai_analyze
@@ -345,8 +343,11 @@ class cli_analysis(OmniAnalyze_Base):
         """Write the memory chart page when the terminal shows the memory chart."""
         gpu_arch = workload.sys_info.iloc[0]["gpu_arch"]
         for panel_id, panel in arch_config.panel_configs.items():
-            values = tty.mem_chart_values(
-                args, self._runs, panel_id, panel, self._profiling_config
+            values = chart_values(
+                workload.dfs,
+                tty.mem_chart_tables(
+                    args, self._runs, panel_id, panel, self._profiling_config
+                ),
             )
             if not values:
                 continue
@@ -354,8 +355,9 @@ class cli_analysis(OmniAnalyze_Base):
                 gpu_arch, values, panel_units(panel), workload.membw_result
             )
             heading = format_mem_chart_heading(args.normal_unit, panel_id=panel_id)
-            workload.mem_chart_html_path = save_mem_chart_html(
+            workload.mem_chart_html_path = write_report(
                 workload_path,
+                "mem_chart",
                 _REPORT_DEVICE_ID,
                 args.gpu_kernel,
                 mem_chart_document(gpu_arch, heading, panel, aggregate),

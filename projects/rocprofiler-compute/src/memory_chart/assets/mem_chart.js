@@ -7,6 +7,7 @@
   "use strict";
 
   var model = window.HtmlReport.readModel("mem-chart-model");
+  var clamp = window.HtmlReport.clamp;
   if (!model) {
     return;
   }
@@ -415,10 +416,6 @@
       path.setAttribute("marker-end", head);
     }
     connectors.appendChild(path);
-  }
-
-  function clamp(value, low, high) {
-    return Math.max(low, Math.min(high, value));
   }
 
   function drawConnectors() {
