@@ -11,7 +11,7 @@ on a chart has a unit with no rule here.
 import math
 import re
 from dataclasses import dataclass
-from typing import Any, Literal, Optional, Union
+from typing import Any, Dict, Iterator, Literal, Mapping, Optional, Tuple, Union
 
 from utils.utils_common import metric_ids_by_name
 
@@ -59,16 +59,37 @@ def display_unit(unit: Optional[str]) -> Optional[DisplayUnit]:
     return DisplayUnit("count", " " + _COUNT_SHORT.get(counted, counted.lower()))
 
 
+def unit_of(units: Mapping[str, str], metric_id: str) -> DisplayUnit:
+    """How the chart displays *metric_id*, given its config unit in *units*."""
+    return display_unit(units.get(metric_id)) or PLAIN
+
+
+def _panel_metrics(panel_config: Dict[str, Any]) -> Iterator[Tuple[str, str, Any]]:
+    """(metric id, metric name, metric config) of every metric of a panel config."""
+    for source in panel_config["data source"]:
+        for table in source.values():
+            for name, metric_id in metric_ids_by_name(table).items():
+                yield metric_id, name, table["metric"][name]
+
+
 def panel_units(panel_config: dict[str, Any]) -> dict[str, str]:
     """Metric id -> unit, from a panel config."""
-    tables = [
-        table for source in panel_config["data source"] for table in source.values()
-    ]
     return {
-        metric_id: table["metric"][name]["unit"]
-        for table in tables
-        for name, metric_id in metric_ids_by_name(table).items()
-        if table["metric"][name].get("unit")
+        metric_id: metric["unit"]
+        for metric_id, _, metric in _panel_metrics(panel_config)
+        if metric.get("unit")
+    }
+
+
+def panel_descriptions(panel_config: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    """Metric id -> the metric's name and description, from a panel config."""
+    descriptions = panel_config.get("metrics_description") or {}
+    return {
+        metric_id: {
+            "name": name,
+            "description": " ".join(str(descriptions.get(name, "")).split()),
+        }
+        for metric_id, name, _ in _panel_metrics(panel_config)
     }
 
 

@@ -78,6 +78,8 @@ class MemBwAnalysisResult:
     availability_reason: Optional[str]
     nodes: tuple[BottleneckNode, ...]
     guidance_blocks: tuple[str, ...]
+    # Guidance id of each guidance block; the overflow line has none
+    guidance_block_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
