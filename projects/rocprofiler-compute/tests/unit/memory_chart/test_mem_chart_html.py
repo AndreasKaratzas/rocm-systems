@@ -89,7 +89,11 @@ def test_document_describes_each_value_and_groups_the_arrows():
 
     model = common.embedded_model(
         mem_chart_document(
-            "gfx950", common.MEMORY_CHART_TITLE, PanelConfigs.for_arch("gfx950"), view
+            "gfx950",
+            common.MEMORY_CHART_TITLE,
+            PanelConfigs.for_arch("gfx950"),
+            view,
+            [("kernel_a", view), ("kernel_b", view)],
         ),
         MODEL_ID,
     )
@@ -102,6 +106,10 @@ def test_document_describes_each_value_and_groups_the_arrows():
     assert set(model["metrics"]) == layout.metrics()
     assert model["metrics"]["3.1.1"]["name"] == "VGPRs"
     assert all(metric["description"] for metric in model["metrics"].values())
+    assert [kernel["name"] for kernel in model["views"]["kernels"]] == [
+        "kernel_a",
+        "kernel_b",
+    ]
     # Arrows to blocks attached above or below are drawn vertically, not in edges
     assert sorted(grouped) == [
         i for i, arrow in enumerate(layout.arrows) if blocks[arrow.target].row == 0

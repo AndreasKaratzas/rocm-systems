@@ -4,11 +4,16 @@
 import argparse
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from membw_analysis.engine import run_membw_analysis
+from membw_analysis.engine import (
+    evaluate_membw_dfs,
+    load_membw_spec,
+    run_membw_analysis,
+)
+from membw_analysis.models import MEMBW_TABLE_IDS
 from memory_chart.loader import chart_values
 from memory_chart.mem_chart_html import chart_view, mem_chart_document
 from memory_chart.render import format_mem_chart_heading
@@ -333,35 +338,141 @@ class cli_analysis(OmniAnalyze_Base):
         if args.list_operators is not None:
             sys.exit(0)
 
-    def _write_mem_chart_html(
+    def _roofline(
+        self, args: argparse.Namespace, workload_path: str, gpu_arch: str
+    ) -> Optional[Roofline]:
+        """The roofline report to write for the workload, or None (with the reason
+        logged)."""
+        if gpu_arch not in ROOFLINE_SUPPORTED:
+            if selects_roofline(args.filter_metrics):
+                console_warning(
+                    "roofline",
+                    f"{gpu_arch} does not support the roofline benchmark, so "
+                    "analyze shows no roofline data.",
+                )
+            return None
+        is_roofline_valid, roofline_error_msg = validate_roofline_csv(
+            Path(workload_path)
+        )
+        soc = self.get_socs()
+        if not soc or gpu_arch not in soc:
+            console_warning(
+                "roofline",
+                f"Skipping roofline charting: gpu arch {gpu_arch} not in soc {soc}",
+            )
+            return None
+        if not is_roofline_valid:
+            console_warning(
+                "roofline",
+                "Skipping roofline charting: Invalid roofline.csv: "
+                f"{roofline_error_msg}",
+            )
+            return None
+        soc_obj = soc[gpu_arch]
+        return Roofline(
+            args=soc_obj.get_args(),
+            mspec=soc_obj._mspec,
+            run_parameters={
+                "workload_dir": workload_path,
+                "device_id": _REPORT_DEVICE_ID,
+                "gpu_arch": gpu_arch,
+                "iteration_multiplexing": self._profiling_config.get(
+                    "iteration_multiplexing"
+                ),
+                "matrix_ops_type": mi_gpu_specs.get_roofline_matrix_type(gpu_arch),
+            },
+        )
+
+    def _mem_chart(
+        self, args: argparse.Namespace, arch_config: schema.ArchConfig
+    ) -> Optional[Tuple[int, Dict[str, Any], List[int]]]:
+        """(panel id, panel, table ids) of the memory chart the terminal draws, or
+        None when it draws none."""
+        for panel_id, panel in arch_config.panel_configs.items():
+            table_ids = tty.mem_chart_tables(
+                args, self._runs, panel_id, panel, self._profiling_config
+            )
+            if table_ids:
+                return panel_id, panel, table_ids
+        return None
+
+    def _write_reports(
         self,
         args: argparse.Namespace,
         workload: schema.Workload,
         workload_path: str,
         arch_config: schema.ArchConfig,
     ) -> None:
-        """Write the memory chart page when the terminal shows the memory chart."""
+        """Write the roofline and memory chart pages, evaluating each kernel's tables
+        once for both."""
         gpu_arch = workload.sys_info.iloc[0]["gpu_arch"]
-        for panel_id, panel in arch_config.panel_configs.items():
-            values = chart_values(
-                workload.dfs,
-                tty.mem_chart_tables(
-                    args, self._runs, panel_id, panel, self._profiling_config
+        roofline = self._roofline(args, workload_path, gpu_arch)
+        mem_chart = self._mem_chart(args, arch_config)
+        table_ids = list(ROOFLINE_TABLE_IDS) if roofline else []
+        if mem_chart:
+            table_ids += mem_chart[2]
+            if workload.membw_result is not None:
+                table_ids += [t for t in MEMBW_TABLE_IDS if t in arch_config.dfs]
+        kernel_tables: Dict[int, parser.KernelTables] = {}
+        if table_ids:
+            workload.path = workload_path
+            pmc_df = parser.apply_filters(workload, debug=args.debug_metric_expression)
+            kernel_tables = parser.evaluate_kernel_tables(
+                arch_config, workload, pmc_df, table_ids
+            )
+        if roofline:
+            ai_data = calc_ai_analyze(workload=workload, kernel_tables=kernel_tables)
+            ops_fig, flops_fig, ops_dt, flops_dt = roofline.construct_plotly_figures(
+                ai_data=ai_data
+            )
+            workload.roofline_html_path = roofline.save_html_files(
+                ops_fig, flops_fig, ops_dt, flops_dt
+            )
+        if mem_chart:
+            self._write_mem_chart_html(
+                args, workload, workload_path, mem_chart, kernel_tables
+            )
+
+    def _write_mem_chart_html(
+        self,
+        args: argparse.Namespace,
+        workload: schema.Workload,
+        workload_path: str,
+        mem_chart: Tuple[int, Dict[str, Any], List[int]],
+        kernel_tables: Dict[int, parser.KernelTables],
+    ) -> None:
+        """Write the memory chart page: the chart the terminal shows, and the same
+        chart for each kernel."""
+        panel_id, panel, table_ids = mem_chart
+        gpu_arch = workload.sys_info.iloc[0]["gpu_arch"]
+        units = panel_units(panel)
+        spec = load_membw_spec(gpu_arch) if workload.membw_result is not None else None
+        kernels = [
+            (
+                name,
+                chart_view(
+                    gpu_arch,
+                    chart_values(tables, table_ids),
+                    units,
+                    evaluate_membw_dfs(tables, spec, gpu_arch) if spec else None,
                 ),
             )
-            if not values:
-                continue
-            aggregate = chart_view(
-                gpu_arch, values, panel_units(panel), workload.membw_result
-            )
-            heading = format_mem_chart_heading(args.normal_unit, panel_id=panel_id)
-            workload.mem_chart_html_path = write_report(
-                workload_path,
-                "mem_chart",
-                _REPORT_DEVICE_ID,
-                args.gpu_kernel,
-                mem_chart_document(gpu_arch, heading, panel, aggregate),
-            )
+            for name, tables in kernel_tables.values()
+        ]
+        aggregate = chart_view(
+            gpu_arch,
+            chart_values(workload.dfs, table_ids),
+            units,
+            workload.membw_result,
+        )
+        heading = format_mem_chart_heading(args.normal_unit, panel_id=panel_id)
+        workload.mem_chart_html_path = write_report(
+            workload_path,
+            "mem_chart",
+            _REPORT_DEVICE_ID,
+            args.gpu_kernel,
+            mem_chart_document(gpu_arch, heading, panel, aggregate, kernels),
+        )
 
     @demarcate
     def run_analysis(self) -> None:
@@ -388,73 +499,8 @@ class cli_analysis(OmniAnalyze_Base):
                 self._output,
             )
         else:
-            # Generate roofline plot for single-path, compatible architectures
-            if (len(args.path)) == 1:
-                if gpu_arch in ROOFLINE_SUPPORTED:
-                    is_roofline_valid, roofline_error_msg = validate_roofline_csv(
-                        Path(workload_path)
-                    )
-                    soc = self.get_socs()
-                    if not soc or gpu_arch not in soc:
-                        console_warning(
-                            "roofline",
-                            "Skipping roofline charting: "
-                            f"gpu arch {gpu_arch} not in soc {soc}",
-                        )
-                    elif is_roofline_valid:
-                        soc_obj = soc[gpu_arch]
-
-                        roof_obj = Roofline(
-                            args=soc_obj.get_args(),
-                            mspec=soc_obj._mspec,
-                            run_parameters={
-                                "workload_dir": workload_path,
-                                "device_id": _REPORT_DEVICE_ID,
-                                "gpu_arch": gpu_arch,
-                                "iteration_multiplexing": self._profiling_config.get(
-                                    "iteration_multiplexing"
-                                ),
-                                "matrix_ops_type": (
-                                    mi_gpu_specs.get_roofline_matrix_type(gpu_arch)
-                                ),
-                            },
-                        )
-                        workload.path = workload_path
-
-                        pmc_df = parser.apply_filters(
-                            workload, debug=args.debug_metric_expression
-                        )
-                        ai_data = calc_ai_analyze(
-                            workload=workload,
-                            kernel_tables=parser.evaluate_kernel_tables(
-                                arch_config, workload, pmc_df, ROOFLINE_TABLE_IDS
-                            ),
-                        )
-
-                        (
-                            ops_fig,
-                            flops_fig,
-                            ops_dt,
-                            flops_dt,
-                        ) = roof_obj.construct_plotly_figures(ai_data=ai_data)
-                        workload.roofline_html_path = roof_obj.save_html_files(
-                            ops_fig, flops_fig, ops_dt, flops_dt
-                        )
-                    else:
-                        console_warning(
-                            "roofline",
-                            "Skipping roofline charting: "
-                            f"Invalid roofline.csv: {roofline_error_msg}",
-                        )
-                elif selects_roofline(args.filter_metrics):
-                    console_warning(
-                        "roofline",
-                        f"{gpu_arch} does not support the roofline benchmark, so "
-                        "analyze shows no roofline data.",
-                    )
-
             if len(args.path) == 1:
-                self._write_mem_chart_html(args, workload, workload_path, arch_config)
+                self._write_reports(args, workload, workload_path, arch_config)
 
             tty.show_all(
                 args,

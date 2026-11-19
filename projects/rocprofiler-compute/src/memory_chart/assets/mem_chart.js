@@ -607,8 +607,31 @@
 
   // ---- Start ---------------------------------------------------------------
 
+  // The kernel list shows one kernel's view; Show all shows all kernels together
+  function initKernelList() {
+    var kernels = model.views.kernels;
+    var selection = document.getElementById("mem-chart-selection");
+    selection.textContent = "All kernels";
+    window.HtmlReport.createKernelList({
+      list: document.getElementById("mem-chart-kernel-list"),
+      items: kernels.map(function (kernel, index) {
+        return { key: index, label: kernel.name, title: kernel.name };
+      }),
+      mode: "single",
+      showAllButton: document.getElementById("mem-chart-show-all"),
+      countElement: document.getElementById("mem-chart-kernel-count"),
+      onChange: function (keys) {
+        var index = keys.size ? Array.from(keys)[0] : null;
+        view = index === null ? model.views.aggregate : kernels[index].view;
+        selection.textContent = index === null ? "All kernels" : kernels[index].name;
+        showView();
+      },
+    }).setCountText("(" + kernels.length + ")");
+  }
+
   document.getElementById("mem-chart-heading").textContent = model.heading;
   renderChart();
+  initKernelList();
   initNavigation();
   document.getElementById("mem-chart-export-png").addEventListener("click", exportPng);
   window.HtmlReport.initTheme(
