@@ -12,6 +12,7 @@ import pandas as pd
 import pytest
 
 from utils import schema
+from utils.parser import KernelTables
 from utils.roofline_calc import (
     XMAX_DEFAULT,
     GraphPoints,
@@ -92,7 +93,12 @@ def run_calc_ai_analyze_with_values(
 
     return calc_ai_analyze(
         workload=workload,
-        kernel_tables={kernel_id: {401: pd.DataFrame(), 402: points_table}},
+        kernel_tables={
+            kernel_id: KernelTables(
+                kernel_name,
+                {401: pd.DataFrame(), 402: points_table},
+            )
+        },
     )
 
 

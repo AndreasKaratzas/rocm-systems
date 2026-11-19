@@ -13,7 +13,7 @@ import pandas as pd
 from utils import schema
 from utils.logger import console_debug, console_error, console_warning
 from utils.mi_gpu_spec import mi_gpu_specs, roofline_column
-from utils.parser import PMC_KERNEL_TOP_TABLE_ID
+from utils.parser import PMC_KERNEL_TOP_TABLE_ID, KernelTables
 from utils.specs import MachineSpecs
 from utils.utils_common import _workload_base_dir
 
@@ -377,13 +377,13 @@ def _append_kernel_point(
 
 def calc_ai_analyze(
     workload: schema.Workload,
-    kernel_tables: Dict[int, Dict[int, pd.DataFrame]],
+    kernel_tables: Dict[int, KernelTables],
 ) -> dict[str, Union[list[list[float]], list[str]]]:
     """
     Calculate per-kernel AI points from the roofline tables of each kernel.
 
-    kernel_tables holds each kernel's evaluated ROOFLINE_TABLE_IDS tables by
-    top-kernel row id, as parser.evaluate_kernel_tables returns them.
+    kernel_tables holds each kernel's name and evaluated ROOFLINE_TABLE_IDS tables
+    by top-kernel row id, as parser.evaluate_kernel_tables returns them.
     """
     console_debug("calc_ai_analyze", "Starting calc_ai analysis using Roofline yamls")
     plot_points = PlotPoints.empty()
@@ -414,9 +414,7 @@ def calc_ai_analyze(
         console_warning("No kernels found to process for roofline")
         return plot_points.__dict__
 
-    for kernel_id, kernel_dfs in kernel_tables.items():
-        kernel_name = top_df.loc[kernel_id, "Kernel_Name"]
-
+    for kernel_id, (kernel_name, kernel_dfs) in kernel_tables.items():
         console_debug("roofline", f"Processing kernel {kernel_id}: {kernel_name[:50]}")
 
         metrics = _extract_ai_metrics(kernel_dfs.get(_ROOFLINE_POINTS_TABLE_ID))

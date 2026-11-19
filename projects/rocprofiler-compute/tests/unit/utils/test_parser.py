@@ -1165,7 +1165,10 @@ def test_evaluate_kernel_tables_evaluates_each_kernel_on_its_own_rows(
 
     evaluated = evaluate_kernel_tables(arch_config, workload, pmc, [201, 999])
 
-    assert list(evaluated) == [0, 1]
+    assert [(kernel_id, kernel.name) for kernel_id, kernel in evaluated.items()] == [
+        (0, "b"),
+        (1, "a"),
+    ]
     assert calls == [
         ([201], [11, 13], [[11, 13]]),
         ([201], [10, 12], [[10, 12]]),

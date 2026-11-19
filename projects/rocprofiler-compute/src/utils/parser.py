@@ -5,7 +5,7 @@ import argparse
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence
 
 import pandas as pd
 
@@ -618,29 +618,37 @@ def kernel_ids(workload: schema.Workload) -> List[int]:
     return workload.dfs[PMC_KERNEL_TOP_TABLE_ID].index.tolist()
 
 
+class KernelTables(NamedTuple):
+    """One kernel's name and its evaluated arch-config tables by table id."""
+
+    name: str
+    tables: Dict[int, pd.DataFrame]
+
+
 def evaluate_kernel_tables(
     arch_config: schema.ArchConfig,
     workload: schema.Workload,
     pmc_df: pd.DataFrame,
     table_ids: Sequence[int],
-) -> Dict[int, Dict[int, pd.DataFrame]]:
+) -> Dict[int, KernelTables]:
     """Evaluate the arch-config tables *table_ids* on each kernel's rows of *pmc_df*.
 
-    Returns each kernel's tables by top-kernel row id, in kernel_ids order; a kernel
-    with no rows in pmc_df is left out. Rows are grouped by kernel once, and each
-    kernel is evaluated in one call, so the built-in variables are computed once per
-    kernel whatever tables are asked for.
+    Returns each kernel's name and tables by top-kernel row id, in kernel_ids order;
+    a kernel with no rows in pmc_df is left out. Rows are grouped by kernel once, and
+    each kernel is evaluated in one call, so the built-in variables are computed once
+    per kernel whatever tables are asked for.
     """
     top_df = workload.dfs.get(PMC_KERNEL_TOP_TABLE_ID)
     if top_df is None:
         return {}
     rows_by_kernel = pmc_df.groupby("Kernel_Name", sort=False).indices
     tables = [table_id for table_id in table_ids if table_id in arch_config.dfs]
-    evaluated: Dict[int, Dict[int, pd.DataFrame]] = {}
+    evaluated: Dict[int, KernelTables] = {}
     for kernel_id in kernel_ids(workload):
         if kernel_id not in top_df.index:
             continue
-        rows = rows_by_kernel.get(top_df.loc[kernel_id, "Kernel_Name"])
+        name = top_df.loc[kernel_id, "Kernel_Name"]
+        rows = rows_by_kernel.get(name)
         if rows is None:
             continue
         kernel_pmc_df = pmc_df.iloc[rows]
@@ -658,7 +666,7 @@ def evaluate_kernel_tables(
                 for table in workload.pass_tables.values()
             ],
         )
-        evaluated[kernel_id] = kernel_dfs
+        evaluated[kernel_id] = KernelTables(name, kernel_dfs)
     return evaluated
 
 
