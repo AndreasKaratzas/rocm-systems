@@ -215,12 +215,14 @@ a.mem-chart-stall:hover .mem-chart-item-title { text-decoration: underline; }
 }
 
 .mem-chart-guidance:empty { display: none; }
+/* Each guidance box is as wide as its longest line, as in the terminal */
 .mem-chart-guidance {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 10px;
 }
-.mem-chart-status { grid-column: 1 / -1; margin: 0; }
+.mem-chart-status { flex: 1 1 100%; margin: 0; }
 .mem-chart-guidance-block {
   margin: 0;
   padding: 10px 12px;
@@ -228,7 +230,10 @@ a.mem-chart-stall:hover .mem-chart-item-title { text-decoration: underline; }
   border-radius: 6px;
   background: var(--report-surface);
   font-family: inherit;
-  white-space: pre-wrap;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
 }
 .mem-chart-guidance-block strong { color: var(--mem-stall); }
 .mem-chart-guidance-block:target { outline: 2px solid var(--mem-stall); }

@@ -344,7 +344,9 @@
     canvas.style.removeProperty("--mem-panel-width");
     panels.forEach(function (panel) { panel.style.width = "max-content"; });
     var width = Math.max.apply(null, panels.map(function (panel) {
-      return panel.offsetWidth;
+      // offsetWidth rounds down, which would wrap the widest row
+      var bounds = rect(panel);
+      return Math.ceil(bounds.right - bounds.left);
     }).concat([0]));
     panels.forEach(function (panel) { panel.style.width = ""; });
     canvas.style.setProperty("--mem-panel-width", width + "px");
@@ -356,6 +358,8 @@
   // sit in the middle of the edge. So every arrow runs straight.
   function placeEdgeGroups() {
     grid.querySelectorAll(".mem-chart-edge").forEach(function (edge) {
+      // The lanes stretch to the edge, so measure them at the edge's own width
+      edge.style.width = "";
       var width = 0;
       edge.querySelectorAll(".mem-chart-lanes").forEach(function (lanes) {
         width = Math.max(width, lanes.scrollWidth);
