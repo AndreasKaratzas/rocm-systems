@@ -41,9 +41,10 @@ class RaceDetector {
 public:
   /// ldsSizeBytes is the CU backing capacity, independent of workgroup
   /// allocation metadata and the lazily materialized byte count.
+  /// checkLdsWaw controls only LDS write-after-write reporting.
   RaceDetector(int nWaves, int vgprCount, int sgprCount, Dim3d workgroupId,
                std::function<void(RaceViolation)> raceHandler, CounterCapacities,
-               size_t ldsSizeBytes);
+               size_t ldsSizeBytes, bool checkLdsWaw = true);
 
   /// Allocate an event using the counter and ordering implied by its type.
   EventId allocateEventId(WaveId wave, InstructionSnapshot instruction, MemoryEventType type,
@@ -82,18 +83,18 @@ public:
   /// and other counter obligations may still be active.
   void retireLdsIntervals(EventId);
 
-  /// Check for RAW hazards: no outstanding LDS writes overlap the range.
-  /// Same-wave operations are ordered only when both belong to the same
-  /// non-UNORDERED completion class.
+  /// @brief Check for RAW hazards against outstanding LDS writes.
+  /// @details Same-wave accesses are ordered when the earlier LDS access has
+  /// completed or both accesses belong to the same non-UNORDERED completion class.
   void validateRead(int addr, WaveId, int lane, int nBytes,
                     MemoryOrderClass currentMemoryOrder = MemoryOrderClass::LDS,
                     uint8_t atomicBytes = 0) const;
 
-  /// Check for WAR hazards: no outstanding LDS reads overlap the range.
-  /// Same-wave operations are ordered only when both belong to the same
-  /// non-UNORDERED completion class.
-  /// TODO(newling): WAW detection (write vs outstanding writes) is not
-  /// implemented.
+  /// @brief Check for WAR and WAW hazards against outstanding LDS accesses.
+  /// @details Same-wave accesses are ordered when the earlier LDS access has
+  /// completed or both accesses belong to the same non-UNORDERED completion class.
+  /// WAW is reported at the write, independent of values or later reads, unless
+  /// disabled by checkLdsWaw at construction.
   void validateWrite(int addr, WaveId, int lane, int nBytes,
                      MemoryOrderClass currentMemoryOrder = MemoryOrderClass::LDS,
                      uint8_t atomicBytes = 0) const;
@@ -168,8 +169,11 @@ private:
   static bool hasPotentialLdsConflict(int addr, int nBytes,
                                       const std::vector<LdsChunkCounts> &counts, WaveId wave,
                                       MemoryOrderClass currentMemoryOrder);
+  void reportUnorderedOverlaps(const std::vector<EventId> &pending, int addr, WaveId wave, int lane,
+                               int nBytes, bool isWrite, MemoryOrderClass currentMemoryOrder,
+                               uint8_t atomicBytes) const;
 
-  /// Active LDS write events (for scanning during read validation).
+  /// Active LDS write events (for scanning during read and write validation).
   std::vector<EventId> ldsWriteEvents;
 
   /// Active LDS read events (for scanning during write validation).
@@ -187,6 +191,7 @@ private:
   std::vector<LdsChunkCounts> byteReadCounts;
 
   size_t ldsSizeBytes_;
+  bool checkLdsWaw_;
   EventRegistry events_;
 
   Dim3d workgroupId;
