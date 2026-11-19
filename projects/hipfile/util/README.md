@@ -1,5 +1,11 @@
 # hipFile Development Utilities
 
+## check-iwyu.sh
+
+Checks the include-what-you-use runs that `iwyu-wrapper.sh` recorded. Fails
+if IWYU didn't run or any run failed, and lists the files IWYU suggests
+changing without failing on them. Used by CI.
+
 ## check-profiler-abi.sh
 
 Compile-only guard that the hipFile dispatch-table ABI still satisfies the
@@ -8,11 +14,13 @@ Compile-only guard that the hipFile dispatch-table ABI still satisfies the
 at hipFile PR time instead of breaking the profiler build post-merge. Requires
 a ROCm/HIP toolchain; run inside a hipFile CI container. Used by CI.
 
-## check-iwyu.sh
+## ci-build-installed-examples.sh
 
-Checks the include-what-you-use runs that `iwyu-wrapper.sh` recorded. Fails
-if IWYU didn't run or any run failed, and lists the files IWYU suggests
-changing without failing on them. Used by CI.
+Checks the installed examples: that every example directory was installed
+with a `CMakeLists.txt`, and that each one configures and builds standalone
+against the installed hipFile with warnings as errors. Runs the `get-version`
+example, which needs no GPU, and checks that its header and library versions
+match. Used by CI after it installs the hipFile packages.
 
 ## files-changed.sh
 
