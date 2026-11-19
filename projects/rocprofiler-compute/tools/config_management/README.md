@@ -173,31 +173,22 @@ This check:
 
 ## Metric Descriptions
 
-Metric descriptions flow unidirectionally from panel YAMLs to documentation:
+Metric descriptions flow unidirectionally from the analysis views and the metric library
+to documentation:
 
 ```
-Panel YAMLs (src/) → Per-Arch YAMLs (tools/) → Docs YAMLs (docs/) → Sphinx HTML
+Views and metric library (src/) → Docs YAMLs (docs/data/metrics/) → Sphinx HTML
 ```
 
 **Files:**
 ```bash
-tools/per_arch_metric_definitions/
-  ├── gfx{908,90a,940,941,942,950,115x,1201,1250}_metrics_description.yaml   # plain + rst + unit
-
 docs/data/metrics/
-  └── <arch>_metrics.yaml                                  # per-arch rst + unit (generated)
+  └── <arch>_metrics.yaml   # per-arch plain + rst + unit (generated); the docs show rst
 ```
 
-**After editing panel `metrics_description` sections:**
+**After editing metric descriptions in the metric library or rows of the views:**
 ```bash
-python tools/config_management/metric_description_manager.py --sync-all src/rocprof_compute_soc/analysis_configs
-python tools/config_management/metric_description_manager.py --generate-docs
+python tools/config_management/metric_description_manager.py --sync-all
 ```
 
-To regenerate the docs YAML for a single architecture without rewriting the others:
-
-```bash
-python tools/config_management/metric_description_manager.py --generate-docs --docs-arch <arch>
-```
-
-**Manual RST edits:** Edit per-arch YAMLs directly. The framework preserves an edit when its `rst` differs from `plain`.
+**Manual RST edits:** Edit the `rst` field in `docs/data/metrics/<arch>_metrics.yaml` directly. The framework preserves an edit when its `rst` differs from `plain`.

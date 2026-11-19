@@ -398,7 +398,7 @@ Customers read `docs/how-to/`, `CHANGELOG.md`, and the CLI help.
 
 ## Metrics Management
 
-If your PR modifies **metric configurations** — panel YAMLs under `src/rocprof_compute_soc/analysis_configs/gfx<arch>/*.yaml` or metric descriptions in `tools/per_arch_metric_definitions/gfx<arch>_metrics_description.yaml` — follow the metric management workflow:
+If your PR modifies **metric configurations** — panel YAMLs under `src/rocprof_compute_soc/analysis_configs/gfx<arch>/*.yaml` or metric descriptions in `docs/data/metrics/gfx<arch>_metrics.yaml` — follow the metric management workflow:
 
 1. Edit the relevant panel YAMLs.
 2. Validate them with `python tools/config_management/master_config_workflow_script.py --validate-only`.
