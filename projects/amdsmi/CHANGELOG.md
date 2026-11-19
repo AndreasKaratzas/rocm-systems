@@ -14,7 +14,7 @@ Full documentation for amd_smi_lib is available at [https://rocm.docs.amd.com/pr
 ### Changed
 
 - **`amd-smi` now shows the driver package build in the amdgpu version**.  
-  - `amd-smi`, `amd-smi version`, and `amd-smi static --driver` report the version as `6.19.14.31400000-2370381` and add the driver package when the installed `amdgpu-dkms` or `amdgpu-kmod` package matches the loaded driver. Scripts that parse the amdgpu version now get the `-<build>` suffix, and `amd-smi static --csv` has two new columns after `os_kernel_version`.
+  - `amd-smi`, `amd-smi version`, and `amd-smi static --driver` report the version as `6.19.14.31400000-2370381` and name the driver package when the installed `amdgpu-dkms` or `amdgpu-kmod` package matches the loaded driver. Scripts that parse the amdgpu version now get the `-<build>` suffix, and `amd-smi static --csv` has a new `package` column after `os_kernel_version`.
 
 - **`amdsmi_get_gpu_kfd_info()` now returns `AMDSMI_STATUS_NOT_SUPPORTED` on WSL**.
   - WSL has no KFD, so the call previously returned success with placeholder values; it now reports the data as unsupported.
