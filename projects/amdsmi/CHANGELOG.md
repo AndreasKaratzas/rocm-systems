@@ -6,7 +6,15 @@ Full documentation for amd_smi_lib is available at [https://rocm.docs.amd.com/pr
 
 ## amd_smi_lib for ROCm 10.3.0
 
+### Added
+
+- **Added `amdsmi_get_gpu_driver_info_v2()` to report the amdgpu driver build and package**.  
+  - Returns the fields of `amdsmi_get_gpu_driver_info()` and the kernel and amdgpu parts of the driver version. When the installed `amdgpu-dkms` or `amdgpu-kmod` package matches the loaded driver, it also returns that package, its build, and the full version such as `6.19.14.31400000-2370381`. Includes Python and Rust bindings.
+
 ### Changed
+
+- **`amd-smi` now shows the driver package build in the amdgpu version**.  
+  - `amd-smi`, `amd-smi version`, and `amd-smi static --driver` report the version as `6.19.14.31400000-2370381` and add the driver package when the installed `amdgpu-dkms` or `amdgpu-kmod` package matches the loaded driver. Scripts that parse the amdgpu version now get the `-<build>` suffix, and `amd-smi static --csv` has two new columns after `os_kernel_version`.
 
 - **`amdsmi_get_gpu_kfd_info()` now returns `AMDSMI_STATUS_NOT_SUPPORTED` on WSL**.
   - WSL has no KFD, so the call previously returned success with placeholder values; it now reports the data as unsupported.
@@ -27,6 +35,11 @@ Full documentation for amd_smi_lib is available at [https://rocm.docs.amd.com/pr
 
 - **Setting the current memory partition now cancels a pending memory partition change**.  
   - Previously, amd-smi did not send this request to the driver, so the next driver reload still applied a different partition requested earlier. Older amdgpu drivers ignore the request because of a driver bug and still apply the partition requested earlier; update to an amdgpu driver that has the fix. If a read-only `/sys` (for example, in a container) refuses the request, amd-smi now reports an error instead of success.
+
+### Upcoming Changes
+
+- **`amdsmi_get_gpu_driver_info()` and `amdsmi_driver_info_t` will be removed in a future major release**.  
+  - Use `amdsmi_get_gpu_driver_info_v2()` and `amdsmi_driver_info_v2_t` instead; they report the same driver name, version, and date. The Python function emits a `DeprecationWarning`.
 
 ## amd_smi_lib for ROCm 10.2.0
 
