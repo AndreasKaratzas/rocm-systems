@@ -397,6 +397,12 @@ device:
   Unit_hipInit_Positive:
     <<: *level_default
     tags: [init, smoke, P0]
+  Unit_hipInit_Positive_NoQueuesAtInit:
+    <<: *level_default
+    unsupported:
+      targets: [amd_windows, nvidia_linux, nvidia_windows]
+      reason: "ROCM-34268 - unit/device/CMakeLists.txt adds hipInitQueues.cc only for AMD on UNIX: it reads the process's queues from KFD sysfs."
+    tags: [init, P0]
   Unit_hipInit_Negative:
     <<: *level_default
     disabled:

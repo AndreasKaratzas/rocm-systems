@@ -52,6 +52,11 @@ if(HIP_PLATFORM MATCHES "amd" AND BUILD_SHARED_LIBS)
   set(TEST_SRC ${TEST_SRC} ${AMD_SRC})
 endif()
 
+# Reads the process's queues from KFD sysfs
+if(HIP_PLATFORM MATCHES "amd" AND UNIX)
+  set(TEST_SRC ${TEST_SRC} hipInitQueues.cc)
+endif()
+
 add_executable(getDeviceCount EXCLUDE_FROM_ALL getDeviceCount_exe.cc)
 set_source_files_properties(getDeviceCount_exe.cc PROPERTIES LANGUAGE ${GPGPU_LANGUAGE})
 set_property(GLOBAL APPEND PROPERTY G_INSTALL_EXE_TARGETS getDeviceCount)
@@ -122,6 +127,14 @@ if(HIP_PLATFORM MATCHES "amd")
   add_dependencies(DeviceTest hipDeviceSetGetScratchExe)
   set_property(GLOBAL APPEND PROPERTY G_INSTALL_EXE_TARGETS hipDeviceSetGetScratchExe)
   set_source_files_properties(hipDeviceSetGetScratchExe.cc PROPERTIES LANGUAGE ${GPGPU_LANGUAGE})
+endif()
+
+if(HIP_PLATFORM MATCHES "amd" AND UNIX)
+  add_executable(hipInitQueues EXCLUDE_FROM_ALL hipInitQueues_Exe.cc)
+  set_source_files_properties(hipInitQueues_Exe.cc PROPERTIES LANGUAGE ${GPGPU_LANGUAGE})
+  target_link_libraries(hipInitQueues ${GPGPU_LINKER_LIBRARIES})
+  add_dependencies(DeviceTest hipInitQueues)
+  set_property(GLOBAL APPEND PROPERTY G_INSTALL_EXE_TARGETS hipInitQueues)
 endif()
 
 if(HIP_PLATFORM MATCHES "amd" AND BUILD_SHARED_LIBS AND UNIX)
