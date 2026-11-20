@@ -16,8 +16,8 @@ class Configuration {
     // threads read this flag. This does not prevent stale reads, but it does
     // prevent a torn read while the flag is being written.
     std::atomic<std::optional<bool>> m_fastpath_override;
-    std::optional<bool> m_fallback_override;
-    std::optional<bool> m_host_override;
+    std::optional<bool>              m_fallback_override;
+    std::optional<bool>              m_host_override;
 
 public:
     virtual ~Configuration() = default;

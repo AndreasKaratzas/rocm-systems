@@ -1303,7 +1303,8 @@ TEST_P(AsyncFastpathCopyOp, ENOTTYDisablesFastpathAndSetsFallbackNeeded)
         EXPECT_CALL(mhip, hipAmdFileRead).WillOnce(Throw(std::system_error(ENOTTY, std::generic_category())));
     }
     else {
-        EXPECT_CALL(mhip, hipAmdFileWrite).WillOnce(Throw(std::system_error(ENOTTY, std::generic_category())));
+        EXPECT_CALL(mhip, hipAmdFileWrite)
+            .WillOnce(Throw(std::system_error(ENOTTY, std::generic_category())));
     }
     async_fastpath_copy(op.get());
     ASSERT_EQ(op->bytes_transferred_internal, -hipFileInternalError);
@@ -1332,8 +1333,8 @@ TEST_P(AsyncFastpathCopyOp, ENOTTYSkipsFastpathForQueuedOp)
     });
 
     ssize_t second_bytes_transferred{0};
-    auto    second_op = std::make_shared<AsyncOp>(io_type, mfile, mbuffer, mstream, &size, &file_offset,
-                                                  &buffer_offset, &second_bytes_transferred);
+    auto    second_op   = std::make_shared<AsyncOp>(io_type, mfile, mbuffer, mstream, &size, &file_offset,
+                                                    &buffer_offset, &second_bytes_transferred);
     op->failover        = std::make_shared<AsyncFailoverState>();
     second_op->failover = std::make_shared<AsyncFailoverState>();
 
@@ -1344,7 +1345,8 @@ TEST_P(AsyncFastpathCopyOp, ENOTTYSkipsFastpathForQueuedOp)
         EXPECT_CALL(mhip, hipAmdFileRead).WillOnce(Throw(std::system_error(ENOTTY, std::generic_category())));
     }
     else {
-        EXPECT_CALL(mhip, hipAmdFileWrite).WillOnce(Throw(std::system_error(ENOTTY, std::generic_category())));
+        EXPECT_CALL(mhip, hipAmdFileWrite)
+            .WillOnce(Throw(std::system_error(ENOTTY, std::generic_category())));
     }
 
     async_fastpath_copy(op.get());
