@@ -16,6 +16,7 @@ Full documentation for ROCprofiler-SDK is available at [rocm.docs.amd.com/projec
 ### Resolved issues
 
 - When a context that needs packet interception replaces a queue created by `hsa_amd_queue_create` with a system-memory intercept queue, the device-memory placement flags are now cleared in the caller's descriptor. HIP reads these flags back and previously assumed a device-memory ring buffer that profiling had silently replaced.
+- Fixed a segmentation fault in the HSA signal pool when the async signal handler released a signal while another thread grew the pool. `pool::release()` read the pool size without holding the pool lock.
 
 ### Known issues
 
